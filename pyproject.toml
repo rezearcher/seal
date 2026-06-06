@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seal"
+version = "0.1.0"
+description = "Verified Prompt Envelope Protocol & AI Agent Security"
+requires-python = ">=3.11"
+dependencies = [
+    "cryptography>=41.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+seal = "seal.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["seal*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

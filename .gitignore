@@ -1,2 +1,14 @@
-seal/
+# Runtime secrets / broker artifacts — never commit credential material.
+.seal/
+*.yaml.enc
 *.encrypted
+*.key
+audit.jsonl
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
