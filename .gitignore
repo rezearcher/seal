@@ -1,3 +1,6 @@
+# MkDocs build output
+site/
+
 # Runtime secrets / broker artifacts — never commit credential material.
 .seal/
 *.yaml.enc
@@ -12,5 +15,23 @@ __pycache__/
 *.egg-info/
 build/
 dist/
-__pycache__/
-*.pyc
+
+# Virtual environments
+.venv/
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build / benchmarks
+benchmark_*.py
+profiling/

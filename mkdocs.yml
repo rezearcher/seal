@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=https://squidfunk.github.io/mkdocs-material/schema.json
+
+site_name: Seal / VPE
+site_description: Verified Prompt Envelope Protocol — Cryptographic provenance for AI agent prompts
+site_url: https://nousresearch.github.io/seal
+repo_url: https://github.com/nousresearch/seal
+repo_name: nousresearch/seal
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.annotate
+    - content.code.copy
+    - content.tabs.link
+    - search.suggest
+    - search.highlight
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [seal]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_category_heading: true
+            show_if_no_docstring: false
+            members_order: source
+            docstring_style: google
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - tables
+  - toc:
+      permalink: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/nousresearch/seal
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Protocol Specification: spec.md
+  - API Reference:
+      - Overview: api/index.md
+      - seal.core: api/core.md
+      - seal.vpe: api/vpe.md
+      - seal.audit: api/audit.md
+      - seal.broker: api/broker.md
+      - seal.credential_store: api/credential_store.md
+      - seal.store: api/store.md
+      - seal.key_store: api/key_store.md
+      - seal.key_manager: api/key_manager.md
+      - seal.rollback: api/rollback.md
+      - seal.epd: api/epd.md
+      - seal.integration: api/integration.md
+  - CLI Reference: cli.md
+  - Integration Guide: integration.md
+  - Threat Model: threat-model.md
+  - Architecture: architecture.md
+  - License: license.md

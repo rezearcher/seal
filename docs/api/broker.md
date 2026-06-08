@@ -1,0 +1,3 @@
+# `seal.broker`
+
+::: seal.broker

@@ -1,0 +1,3 @@
+# `seal.vpe`
+
+::: seal.vpe

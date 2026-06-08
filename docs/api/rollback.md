@@ -1,0 +1,3 @@
+# `seal.rollback`
+
+::: seal.rollback

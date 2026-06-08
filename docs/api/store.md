@@ -1,0 +1,3 @@
+# `seal.store`
+
+::: seal.store
