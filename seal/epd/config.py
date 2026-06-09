@@ -67,7 +67,17 @@ class EPDConfig:
     max_prompt_chars: int = 100_000
     llm: Optional[LLMConfig] = None
     normalize_obfuscation: bool = True
+    llm_scan_all: bool = False
 
     def llm_enabled(self) -> bool:
         """True when an LLM pass could run for this config."""
         return self.llm is not None and self.llm.is_usable()
+
+    def llm_scan_all_prompts(self) -> bool:
+        """True when the LLM pass should run on *all* prompts, even regex-clean ones.
+
+        .. warning::
+            This incurs an LLM cost on *every* prompt, so it is off by default.
+            Enable only when you have a cheap/fast classifier endpoint.
+        """
+        return self.llm_enabled() and self.llm_scan_all

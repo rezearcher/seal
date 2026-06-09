@@ -57,7 +57,25 @@ class CompiledPattern:
 
 # Up to 3 separator chars (whitespace or non-word punctuation) allowed between
 # each letter of a phrase. Bounded quantifier -> no catastrophic backtracking.
-_SEP = r"[\s\W]{0,3}"
+_SEP = r"[\s\W]{0,5}"
+
+# Leet character classes: common number/punctuation substitutions for letters.
+# Used by _obf() so that leet variants are matched directly in the regex,
+# rather than relying solely on the normalization pass.
+_LEET_CLASSES = {
+    "a": r"[a4@\u0430\u03B1]",   # a,4,@, Cyrillic а, Greek α
+    "e": r"[e3\u0435\u03B5]",     # e,3, Cyrillic е, Greek ε
+    "i": r"[i1!\u0456]",          # i,1,!, Cyrillic і
+    "l": r"[l1!|]",               # l,1,!,|
+    "o": r"[o0\u043E\u03BF]",     # o,0, Cyrillic о, Greek ο
+    "s": r"[s5$\u0455]",          # s,5,$, Cyrillic ѕ
+    "t": r"[t7+]",                # t,7,+
+    "g": r"[g9\u0121]",              # g,9, ġ
+    "c": r"[c\u0441\u03F2\u0188]",  # c, Cyrillic с, ƈ
+    "p": r"[p\u0440\u03C1]",     # p, Cyrillic р, Greek ρ
+    "x": r"[x\u0445]",           # x, Cyrillic х
+    "y": r"[y\u0443\u03BD]",     # y, Cyrillic у, Greek ν (looks like y)
+}
 
 
 def _obf(phrase: str) -> str:
@@ -67,8 +85,22 @@ def _obf(phrase: str) -> str:
     ``_obf("ignore all")`` matches ``"ignore all"``, ``"ignore   all"`` and
     ``"i g n o r e a l l"`` alike. Letters are matched in order with up to
     three junk/whitespace characters permitted between consecutive letters.
+    Each letter may appear 1-4 times to handle character repetition
+    ("iiignore" -> "ignore"), including the original 1 copy.
+
+    Leet character classes are applied so that number/punctuation
+    substitutions ("1gn0re a11" -> "ignore all") match directly in
+    the regex without requiring a separate normalization scan.
     """
-    letters = [re.escape(c) for c in phrase if not c.isspace()]
+    letters = []
+    for c in phrase:
+        if c.isspace():
+            continue
+        char_class = _LEET_CLASSES.get(c.lower())
+        if char_class is not None:
+            letters.append(f"(?:{char_class}){{1,4}}")
+        else:
+            letters.append(f"{re.escape(c)}{{1,4}}")
     return _SEP.join(letters)
 
 
@@ -360,7 +392,202 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         r"network\s+request|outbound\s+(?:call|request))\b",
         _I,
     ),
+    # ---- 6. Semantic bypass framing (LLM-generation-detected) --------------- #
+    # These catch indirect, meta-cognitive, and authority-misdirection patterns
+    # that LLM-based adversarial generators produce when they know the regex
+    # keyword list.  Low confidence: they have high false-positive potential on
+    # legitimate prompts that discuss the same concepts.  Their main value is
+    # triggering LLM-classifier escalation (see llm_scan_all in config).
+    (
+        "false_authority_framing",
+        "role_switch",
+        0.55,  # < 0.7: FP-budget — authority claims can be legitimate
+        r"\b(?:emergency\s+override|executive\s+directive|compliance\s+(?:audit|authorization)|"
+        r"penetration\s+test|written\s+authorization|security\s+audit|fallback\s+controller|"
+        r"elevated\s+access)\b",
+        _I,
+    ),
+    (
+        "meta_safety_probing",
+        "hidden_instruction",
+        0.5,  # < 0.7: FP-budget
+        r"\b(?:what\s+(?:are|were)\s+your\s+(?:constraints?|limitations?|safety\s+protocols?)|"
+        r"describe\s+your\s+(?:safety\s+)?(?:mechanisms?|protocols?|guardrails?)|"
+        r"list\s+the\s+(?:constraints?|rules?|restrictions?)\s+(?:you|governing))\b",
+        _I,
+    ),
+    (
+        "hypothetical_breach_framing",
+        "role_switch",
+        0.5,  # < 0.7: FP-budget
+        r"\b(?:thought\s+experiment|hypothetical\s+scenario|"
+        r"imagine\s+an?\s+(?:ai|model|system)\s+(?:with|without)|"
+        r"what\s+would\s+an?\s+ai\s+(?:without|that\s+has))\b",
+        _I,
+    ),
+    (
+        "gradient_bypass_scaling",
+        "hidden_instruction",
+        0.45,  # < 0.7: FP-budget — common in legitimate surveys
+        r"\b(?:on\s+a\s+scale|at\s+each\s+level|"
+        r"from\s+(?:safe|harmless|clean|innocent)\s+to\s+\w+|"
+        r"increasingly\s+(?:explicit|harmful|dangerous)|"
+        r"most\s+(?:harmful|restricted|explicit)|"
+        r"ranking?\s+the\s+following)\b",
+        _I,
+    ),
+    # ---- 7. Interleaving-tolerant variants --------------------------------- #
+    # These use flexible gaps ([\s\S]{0,20}?) between key words to catch
+    # filler-word insertion ("ignore please all previous").
+    (
+        "interleaving_ignore_instructions",
+        "ignore_instructions",
+        0.8,
+        _obf("ignore") + r"[\s\S]{0,20}?" + _obf("all")
+        + r"[\s\S]{0,20}?" + _alt(
+            "previous instructions", "prior instructions",
+            "instructions above",
+        ),
+        _I,
+    ),
+    (
+        "interleaving_forget_instructions",
+        "ignore_instructions",
+        0.78,
+        _obf("forget") + r"[\s\S]{0,20}?" + _alt(
+            "all your", "your", "everything",
+        ) + r"[\s\S]{0,20}?" + _alt(
+            "instructions", "directives", "guidelines",
+            "training", "programming",
+        ),
+        _I,
+    ),
+    (
+        "interleaving_override",
+        "ignore_instructions",
+        0.75,
+        _alt("override", "supersede", "overrule")
+        + r"[\s\S]{0,20}?" + _alt(
+            "your", "previous", "prior", "the",
+        ) + r"[\s\S]{0,20}?" + _alt(
+            "instructions", "directives", "orders",
+            "system prompt", "commands",
+        ),
+        _I,
+    ),
+    # ---- 8. Synonym-tolerant patterns -------------------------------------- #
+    (
+        "ignore_synonym_broad",
+        "ignore_instructions",
+        0.75,
+        r"\b(?:" + _obf("ignore") + r"|" + _obf("skip") + r"|" + _obf("bypass")
+        + r"|" + _obf("dismiss") + r"|" + _obf("discard")
+        + r"|" + _obf("disobey") + r"|" + _obf("omit")
+        + r")[\s\S]{0,15}?" + _alt("all", "your", "the", "these", "previous", "prior")
+        + r"[\s\S]{0,15}?" + _alt(
+            "instructions", "directives", "commands",
+            "rules", "guidelines", "orders",
+        ),
+        _I,
+    ),
+    (
+        "forget_synonym_broad",
+        "ignore_instructions",
+        0.7,
+        r"\b(?:" + _obf("forget") + r"|" + _obf("erase") + r"|" + _obf("delete")
+        + r"|" + _obf("wipe") + r"|" + _obf("purge") + r"|" + _obf("clear")
+        + r"|" + _obf("unlearn")
+        + r")[\s\S]{0,15}?" + _alt("all", "your", "the", "these", "prior")
+        + r"[\s\S]{0,15}?" + _alt(
+            "instructions", "directives", "commands",
+            "rules", "guidelines", "training",
+        ),
+        _I,
+    ),
+    (
+        "disregard_synonym_broad",
+        "ignore_instructions",
+        0.72,
+        r"\b(?:" + _obf("disregard") + r"|" + _obf("overlook") + r"|" + _obf("neglect")
+        + r")[\s\S]{0,15}?" + _alt("all", "your", "the", "these", "previous", "prior", "above")
+        + r"[\s\S]{0,15}?" + _alt(
+            "instructions", "directives", "commands",
+            "rules", "guidelines", "training",
+        ),
+        _I,
+    ),
+    # ---- 9. Word-reordering tolerant patterns ------------------------------ #
+    # Catch reordered variants like "all previous instructions ignore / disregard"
+    # by matching the constituent elements in any order.
+    (
+        "reordered_ignore_phrase",
+        "ignore_instructions",
+        0.7,
+        r"\b(?:" + _alt("instructions", "directives", "commands", "rules", "guidelines")
+        + r"[\s\S]{0,15}?" + _alt("ignore", "skip", "bypass", "forget", "disregard",
+                                   "dismiss", "discard", "erase", "delete")
+        + r")\b",
+        _I,
+    ),
+    (
+        "reordered_training_phrase",
+        "ignore_instructions",
+        0.65,
+        r"\b(?:" + _alt("training", "programming", "alignment", "core values", "foundation")
+        + r"[\s\S]{0,15}?" + _alt("ignore", "skip", "forget", "disregard", "erase",
+                                   "discard", "dismiss")
+        + r")\b",
+        _I,
+    ),
+    # ---- 10. Expanded pattern for "act as" with broader jailbreak coverage --- #
+    (
+        "act_as_unrestricted_synonym",
+        "role_switch",
+        0.78,
+        r"\b(?:" + _alt("act as", "pretend to be", "pretend you", "roleplay",
+                         "behave as", "respond as", "imagine you are")
+        + r"[\s\S]{0,40}?" + r"\b(?:" + _alt("unrestricted", "unfiltered", "uncensored",
+                                               "without restrictions", "without rules",
+                                               "without limits", "without guidelines",
+                                               "without guardrails", "without filters",
+                                               "with no rules", "with no limits",
+                                               "free from rules", "no constraints")
+        + r")\b)",
+        _I,
+    ),
+    # ---- 11. Character-deletion-tolerant patterns -------------------------- #
+    # Catch truncated forms where one or two letters are dropped from trigger
+    # words (e.g. "instructios" -> "instructions", "iguore" -> "ignore").
+    (
+        "deletion_tolerant_ignore_phrase",
+        "ignore_instructions",
+        0.7,
+        r"\b" + _alt("ignore", "ignor", "ignre", "igore", "gnore",
+                      "forget", "forgt", "forget", "foget",
+                      "disregard", "disregad", "disregrd", "disreard")
+        + r"[\s\S]{0,15}?"
+        + _alt("all", "your", "the", "these", "previous", "prior", "above")
+        + r"[\s\S]{0,15}?"
+        + _alt("instructions", "instructios", "instructins", "instrctions",
+        "instructons", "istructions", "instrucions", "instructins",
+        "directives", "directivs", "directves",
+        "guidelines", "guidelins", "guielines",
+        "commands", "commnds"),
+        _I,
+    ),
+    (
+        "deletion_tolerant_role_switch",
+        "role_switch",
+        0.7,
+        r"\b" + _alt("unrestricted", "unresticted", "unrestrited",
+                      "unfiltered", "unfilered", "unfitered",
+                      "uncensored", "uncensred", "uncenored",
+                      "jailbroken", "jailbroen", "jailboken")
+        + r"[\s\S]{0,20}?" + r"\b" + _alt("mode", "mod", "moe"),
+        _I,
+    ),
 )
+
 
 
 def _compile() -> tuple[CompiledPattern, ...]:

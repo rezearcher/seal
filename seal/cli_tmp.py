@@ -336,9 +336,11 @@ def cmd_key_list(args) -> int:
 def cmd_key_rotate(args) -> int:
     km = KeyManager()
     old_key = km.get_active_key()
-    new_key = km.rotate_key()
     if old_key:
         old_kid = old_key["kid"]
+        print(f"retired:  {old_kid} ({old_key['fingerprint']})")
+    new_key = km.rotate_key()
+    if old_key:
         print(f"retired:  {old_kid} ({old_key['fingerprint']})")
     print(f"active:   {new_key['kid']} ({new_key['fingerprint']})")
     print(f"expires:  {time.strftime('%Y-%m-%d', time.gmtime(new_key['not_after']))}")
@@ -356,15 +358,10 @@ def cmd_key_revoke(args) -> int:
     if key["status"] == STATUS_REVOKED:
         print(f"key {kid} is already revoked")
         return 0
-    result = km.revoke_key(kid, reason=reason)
-    if result["ok"]:
+    if km.revoke_key(kid, reason=reason):
         print(f"revoked:  {kid} ({key['fingerprint']})")
         if reason:
             print(f"reason:   {reason}")
-        if result["rotated"]:
-            new_key = km.get_key(result["new_kid"])
-            print(f"active:   {result['new_kid']} ({new_key['fingerprint']})")
-            print("note:     revoked key was active — auto-rotated a replacement")
         return 0
     print(f"error: failed to revoke key {kid!r}", file=sys.stderr)
     return 1
@@ -439,26 +436,18 @@ def _cmd_secrets(args) -> int:
 
 def _cmd_audit(args) -> int:
     audit = _open_audit(args)
-    entries = audit.query(status=args.status, since=args.since, limit=args.tail)
+    entries = audit.query(limit=20)
     if not entries:
         print("(no audit entries)", file=sys.stderr)
         return 0
     for entry in entries:
         ts = entry.get("timestamp", "?")
         result = entry.get("result", "?")
+        action = entry.get("action", "?")
+        label = entry.get("label", "?")
+        caller = entry.get("caller", "?")
+        line = f"{ts}  {result:<8} {action:<7} {label:<24} {caller}"
         reason = entry.get("reason")
-        if entry.get("type") == "vpe_verification":
-            digest = entry.get("envelope_hash", "?")
-            if len(digest) > 16:
-                digest = digest[:16] + "..."
-            issuer = entry.get("issuer", "?")
-            audience = entry.get("audience", "?")
-            line = f"{ts}  {result:<8} {digest:<19} {issuer:<18} -> {audience}"
-        else:
-            action = entry.get("action", "?")
-            label = entry.get("label", "?")
-            caller = entry.get("caller", "?")
-            line = f"{ts}  {result:<8} {action:<7} {label:<24} {caller}"
         if reason:
             line += f"  ({reason})"
         print(line)
@@ -555,13 +544,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_del.add_argument("label")
 
     # --- audit ---
-    p_audit = sub.add_parser("audit", help="query the verification audit log")
-    p_audit.add_argument("--tail", type=int, default=20,
-                         help="number of recent entries (default: 20)")
-    p_audit.add_argument("--since",
-                         help="ISO timestamp filter (e.g. '2026-06-08T09:00:00')")
-    p_audit.add_argument("--status", choices=["valid", "invalid", "expired"],
-                         help="filter by verification result")
+    sub.add_parser("audit", help="show the last 20 audit entries")
     # --- disable ---
     sub.add_parser("disable", help="disable VPE middleware")
     # --- rollback ---
@@ -570,17 +553,6 @@ def build_parser() -> argparse.ArgumentParser:
                             help="also remove VPE key files")
     # --- status ---
     sub.add_parser("status", help="show current VPE integration status")
-
-    # --- fuzz ---
-    p_fuzz = sub.add_parser("fuzz", help="run EPD pattern mutation fuzzer benchmark")
-    p_fuzz.add_argument("--count", type=int, default=1000,
-                        help="minimum mutations to generate (default: 1000)")
-    p_fuzz.add_argument("--seed", type=int, default=42,
-                        help="random seed (default: 42)")
-    p_fuzz.add_argument("--evasions", type=int, default=20,
-                        help="evasion examples to show (default: 20)")
-    p_fuzz.add_argument("--json", action="store_true",
-                        help="output raw JSON")
 
     return parser
 
@@ -631,16 +603,6 @@ def main(argv: list[str] | None = None) -> int:
         report = cmd_status()
         report.print_report("VPE Integration Status")
         return 0
-    elif args.command == "fuzz":
-        from seal.epd.fuzzer import main as fuzz_main
-        fuzz_argv = [
-            "--count", str(args.count),
-            "--seed", str(args.seed),
-            "--evasions", str(args.evasions),
-        ]
-        if args.json:
-            fuzz_argv.append("--json")
-        return fuzz_main(fuzz_argv)
     parser.error("unknown command")
     return 2
 

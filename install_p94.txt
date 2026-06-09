@@ -1,0 +1,30 @@
+#!/bin/bash
+# P9.4 Installation script - run to complete the hardware key support setup
+# Rez: run this to install the CLI and test files
+
+cd /home/rez/projects/seal
+
+echo "=== Installing P9.4: Hardware key support ==="
+
+# Install the compact CLI (hardware commands, --hardware flag, --sig-algorithm)
+cp seal/cli_new.txt seal/cli.py
+echo "1. Installed seal/cli.py"
+
+# Install the test file
+cp tests/test_hardware.txt tests/test_hardware.py
+echo "2. Installed tests/test_hardware.py"
+
+# Cleanup temp files
+rm -f seal/cli_new.txt tests/test_hardware.txt
+rm -f /home/rez/.hermes/kanban/boards/seal/workspaces/t_2b44ecc1/PATCH_CLI.txt
+echo "3. Cleaned up temp files"
+
+# Run the tests
+echo ""
+echo "=== Running hardware tests ==="
+python -m pytest tests/test_hardware.py -v
+
+echo ""
+echo "=== Done ==="
+echo "Try: seal hardware list"
+echo "Try: seal sign 'test' --hardware software-sim"

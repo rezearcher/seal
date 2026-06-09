@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -89,3 +90,153 @@ def test_entry_schema(audit_path):
     assert entry["caller"] == "caller-x"
     assert entry["action"] == "set"
     assert entry["result"] == "granted"
+
+
+# --------------------------------------------------------------------- VPE
+
+
+def test_vpe_verification_entry(audit_path):
+    """VPE audit entry has correct schema."""
+    log = AuditLog(audit_path)
+    log.log_vpe_verification(
+        "sha256:abc123def456",
+        "user:rez",
+        "agent:hermes-default",
+        "valid",
+    )
+    entry = log.query()[0]
+    assert set(entry) >= {
+        "timestamp",
+        "type",
+        "envelope_hash",
+        "issuer",
+        "audience",
+        "result",
+        "reason",
+    }
+    assert entry["type"] == "vpe_verification"
+    assert entry["envelope_hash"] == "sha256:abc123def456"
+    assert entry["issuer"] == "user:rez"
+    assert entry["audience"] == "agent:hermes-default"
+    assert entry["result"] == "valid"
+    assert entry["reason"] == ""
+
+
+def test_vpe_query_by_status(audit_path):
+    """Query filtered by valid/invalid/expired."""
+    log = AuditLog(audit_path)
+    log.log_vpe_verification("sha256:a", "user:rez", "agent:h", "valid")
+    log.log_vpe_verification("sha256:b", "user:rez", "agent:h", "invalid", "bad sig")
+    log.log_vpe_verification("sha256:c", "user:rez", "agent:h", "expired", "ttl")
+    log.log_vpe_verification("sha256:d", "user:rez", "agent:h", "valid")
+
+    valid = log.query(status="valid")
+    assert len(valid) == 2
+    assert all(e["result"] == "valid" for e in valid)
+
+    invalid = log.query(status="invalid")
+    assert len(invalid) == 1
+    assert invalid[0]["envelope_hash"] == "sha256:b"
+
+    expired = log.query(status="expired")
+    assert len(expired) == 1
+    assert expired[0]["reason"] == "ttl"
+
+
+def test_vpe_query_by_since(audit_path):
+    """Query filtered by time range."""
+    log = AuditLog(audit_path)
+    old_ts = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    # Pre-seed an older entry directly, then add a current one via the API.
+    with open(audit_path, "w", encoding="utf-8") as fh:
+        fh.write(
+            json.dumps(
+                {
+                    "timestamp": old_ts,
+                    "type": "vpe_verification",
+                    "envelope_hash": "sha256:old",
+                    "issuer": "user:rez",
+                    "audience": "agent:h",
+                    "result": "valid",
+                    "reason": "",
+                }
+            )
+            + "\n"
+        )
+    log.log_vpe_verification("sha256:new", "user:rez", "agent:h", "valid")
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    recent = log.query(since=cutoff)
+    assert len(recent) == 1
+    assert recent[0]["envelope_hash"] == "sha256:new"
+
+    # No cutoff returns both entries.
+    assert len(log.query()) == 2
+
+
+def test_vpe_query_by_status_and_since(audit_path):
+    """Combined status + since filter."""
+    log = AuditLog(audit_path)
+    old_valid = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+    old_invalid = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    with open(audit_path, "w", encoding="utf-8") as fh:
+        for ts, hsh, result in [
+            (old_valid, "sha256:oldvalid", "valid"),
+            (old_invalid, "sha256:oldinvalid", "invalid"),
+        ]:
+            fh.write(
+                json.dumps(
+                    {
+                        "timestamp": ts,
+                        "type": "vpe_verification",
+                        "envelope_hash": hsh,
+                        "issuer": "user:rez",
+                        "audience": "agent:h",
+                        "result": result,
+                        "reason": "",
+                    }
+                )
+                + "\n"
+            )
+    # Two current entries: one valid, one invalid.
+    log.log_vpe_verification("sha256:newvalid", "user:rez", "agent:h", "valid")
+    log.log_vpe_verification("sha256:newinvalid", "user:rez", "agent:h", "invalid")
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    result = log.query(status="valid", since=cutoff)
+    assert len(result) == 1
+    assert result[0]["envelope_hash"] == "sha256:newvalid"
+
+
+def test_time_based_rotation(tmp_path):
+    """Entries older than max_age_days are pruned on rotation."""
+    path = tmp_path / "audit.jsonl"
+    log = AuditLog(str(path), max_age_days=30)
+    old_ts = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+    recent_ts = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(
+            json.dumps(
+                {"timestamp": old_ts, "type": "vpe_verification", "result": "valid"}
+            )
+            + "\n"
+        )
+        fh.write(
+            json.dumps(
+                {"timestamp": recent_ts, "type": "vpe_verification", "result": "valid"}
+            )
+            + "\n"
+        )
+    # Appending triggers _rotate_locked, which prunes the 40-day-old entry.
+    log.log_vpe_verification("sha256:fresh", "user:rez", "agent:h", "valid")
+
+    entries = log.query()
+    timestamps = [e["timestamp"] for e in entries]
+    assert old_ts not in timestamps
+    assert recent_ts in timestamps
+    assert len(entries) == 2
+
+    # max_age_days=0 prunes everything older than "now" — i.e. all of it.
+    log0 = AuditLog(str(tmp_path / "audit0.jsonl"), max_age_days=0)
+    log0.log_vpe_verification("sha256:x", "user:rez", "agent:h", "valid")
+    assert log0.query() == []

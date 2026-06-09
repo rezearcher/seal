@@ -1,0 +1,694 @@
+---
+title: "SEP-XXXX: Optional VPE Signing Layer for MCP Messages"
+sidebarTitle: "SEP-XXXX: Optional VPE Signing Layer"
+description: "Adds an optional cryptographic signing layer to MCP messages using the Verified Prompt Envelope (VPE) protocol for authentication, authorization, replay protection, and audit trail."
+---
+
+<div className="flex items-center gap-2 mb-4">
+  <Badge color="yellow" shape="pill">
+    Draft
+  </Badge>
+  <Badge color="blue" shape="pill">
+    Standards Track
+  </Badge>
+</div>
+
+| Field         | Value                                                                           |
+| ------------- | ------------------------------------------------------------------------------- |
+| **SEP**       | XXXX                                                                             |
+| **Title**     | Optional VPE Signing Layer for MCP Messages                                      |
+| **Status**    | Draft                                                                            |
+| **Type**      | Standards Track                                                                  |
+| **Created**   | 2026-06-07                                                                       |
+| **Author(s)** | Seal Project                                                                     |
+| **Sponsor**   | None                                                                             |
+| **PR**        | N/A                                                                              |
+
+---
+
+## Abstract
+
+The Model Context Protocol (MCP) defines a standardized JSON-RPC protocol for communication between AI agents and external tools, resources, and prompts. The current specification has no mechanism for:
+
+- **Authentication** — proving that a message originates from a known entity
+- **Authorization** — bounding what operations a message recipient may perform
+- **Replay protection** — preventing the same message from being executed multiple times
+- **Audit trail** — verifying that a message's content has not been tampered with since issuance
+
+This SEP adds an **optional signing layer** to the MCP specification using the **Verified Prompt Envelope (VPE)** protocol — an Ed25519-based signing scheme that wraps MCP messages with cryptographic provenance. The extension is fully backward-compatible: unsigned messages continue to work without modification.
+
+## Motivation
+
+MCP is increasingly used in security-sensitive contexts:
+
+- **CI/CD pipelines** — agents deploying infrastructure changes via MCP tools
+- **Financial trading** — agents executing trades through MCP server tool calls
+- **Healthcare** — agents accessing patient records via MCP resources
+- **Multi-agent systems** — agents delegating tasks to other agents over MCP
+
+In all these scenarios, the receiving agent needs assurance that the message it received:
+
+1. Actually came from the stated issuer (not an attacker)
+2. Has not been modified in transit (tamper evidence)
+3. Was intended for this specific agent (audience binding)
+4. Is still within its validity window (freshness)
+5. Cannot be replayed to perform the same action twice
+6. Respects declared resource and scope limits (least privilege)
+
+Without these guarantees, MCP-based systems are vulnerable to:
+
+- **Prompt injection via tool returns** — compromised tool outputs can inject arbitrary instructions
+- **Replay attacks** — captured signed messages can be re-submitted to repeat actions
+- **Man-in-the-middle modification** — message content can be altered in transit
+- **Orphaned authorization** — a validly-signed message used long after its intended window
+
+While some of these concerns can be addressed at the transport layer (TLS provides in-transit encryption), transport security does not provide **end-to-end** provenance — a message may pass through intermediaries (routers, caches, relay agents) that could modify it. VPE provides cryptographic binding from issuer to verifier that survives transport hops.
+
+## Specification
+
+### Extension Point
+
+The signing layer extends MCP at the **message envelope** level. Every MCP message (requests, notifications, results) can carry an optional `vpe` field inside its existing `_meta` object.
+
+#### Current MCP Message Structure
+
+MCP messages use JSON-RPC 2.0. Every message has a `_meta` object that carries protocol-level metadata:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "database_query",
+    "arguments": {
+      "query": "SELECT * FROM users"
+    },
+    "_meta": {
+      "progressToken": "abc123"
+    }
+  }
+}
+```
+
+#### Proposed Addition
+
+A new optional `vpe` sub-field is added to `_meta` on any MCP message:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "database_query",
+    "arguments": {
+      "query": "SELECT * FROM users"
+    },
+    "_meta": {
+      "vpe": {
+        "version": "1.0",
+        "envelope": { ... }
+      }
+    }
+  }
+}
+```
+
+The `_meta.vpe` field has the following structure:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | string | ✓ | VPE protocol version (currently `"1.0"`) |
+| `envelope` | VPEEnvelope | ✓ | The signed VPE envelope object |
+
+### VPE Envelope Schema
+
+The `envelope` object is defined by the following JSON Schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://seal.vpe/v1.0/envelope",
+  "title": "VPE Envelope v1.0",
+  "type": "object",
+  "required": [
+    "vpe_version", "prompt", "scope", "issuer", "audience",
+    "ttl_seconds", "nonce", "counter", "signature"
+  ],
+  "properties": {
+    "vpe_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "Protocol version (MAJOR.MINOR)"
+    },
+    "prompt": {
+      "type": "string",
+      "maxLength": 1000000,
+      "description": "The signed instruction or prompt content"
+    },
+    "scope": {
+      "type": "object",
+      "required": ["allowed_tools", "max_tokens", "max_cost", "allowed_domains"],
+      "properties": {
+        "allowed_tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tool names the prompt is authorized to call ([\"*\"] = all)"
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum output tokens the agent may generate"
+        },
+        "max_cost": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Maximum cost in USD the agent may incur"
+        },
+        "allowed_domains": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Domain glob patterns for network access ([\"*\"] = all)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "issuer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identity of the signing entity (e.g. \"user:alice\", \"service:ci-pipeline\")"
+    },
+    "audience": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Intended recipient agent (e.g. \"agent:hermes-production\", \"agent:*\")"
+    },
+    "doc_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of source document the prompt binds to (optional)"
+    },
+    "ttl_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Time-to-live in seconds from issuance"
+    },
+    "nonce": {
+      "type": "string",
+      "minLength": 16,
+      "description": "Unique replay-prevention value (RECOMMENDED: UUIDv4 or 32+ hex chars)"
+    },
+    "counter": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonically increasing sequence number per issuer"
+    },
+    "public_key": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64,128}$",
+      "description": "Signer's public key for self-contained verification (optional, TOFU mode)"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{128}$",
+      "description": "Ed25519 signature (64 bytes, hex-encoded)"
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+### Field Definitions
+
+#### `vpe_version` (string, REQUIRED)
+
+The protocol version identifier. For this specification, the value MUST be `"1.0"`.
+
+Format: `MAJOR.MINOR` where MAJOR indicates breaking changes and MINOR indicates backward-compatible additions.
+
+- Implementations MUST reject envelopes with a `vpe_version` MAJOR they do not support.
+- Implementations MAY accept envelopes with a higher MINOR version if unknown fields are tolerated.
+
+#### `prompt` (string, REQUIRED)
+
+The actionable instruction the agent SHOULD execute. This is the core payload being authenticated.
+
+Constraints:
+- MUST be a valid UTF-8 string.
+- MUST NOT exceed 1,000,000 (1M) characters.
+- SHOULD be human-readable and self-contained.
+- MAY be empty (semantically: a no-op heartbeat or probe).
+
+#### `scope` (object, REQUIRED)
+
+The scope object declares execution constraints as a least-privilege capability set. The receiving agent MUST NOT exceed the bounds declared in `scope`.
+
+| Sub-field | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `allowed_tools` | array of strings | ✓ | Tool names the agent may use (empty = no tools, `["*"]` = all tools) |
+| `max_tokens` | integer | ✓ | Maximum output tokens the agent may generate |
+| `max_cost` | number | ✓ | Maximum monetary cost the agent may incur (in USD) |
+| `allowed_domains` | array of strings | ✓ | Domain patterns for network access (empty = no network, `["*"]` = all domains) |
+
+#### `issuer` (string, REQUIRED)
+
+The identity of the entity that signed the envelope. Format is implementation-defined but SHOULD follow a colon-delimited scheme:
+
+- `"user:alice"` — a human user identified by username
+- `"service:ci-pipeline"` — an automated service
+- `"workflow:order-processing/v3"` — a workflow step
+- `"key:abc123def456"` — a raw key identifier
+
+The verifier uses `issuer` to look up the corresponding Ed25519 public key for signature verification.
+
+#### `audience` (string, REQUIRED)
+
+The intended recipient agent or agent profile. The verifier MUST check that its own identity matches `audience`.
+
+Format:
+- `"agent:hermes-default"` — agent profile name
+- `"agent:*"` — any agent (wildcard, use with caution)
+
+If `audience` does not match the verifier's identity (and the wildcard `"agent:*"` is not used), the envelope MUST be rejected.
+
+#### `doc_sha256` (string, OPTIONAL)
+
+SHA-256 hash of the source document that originated the prompt, hex-encoded (64 hex characters). This binds the prompt to a specific document, preventing the same signed envelope from being applied to different source material.
+
+- When present, the verifier SHOULD compute the SHA-256 of the source document (if available) and verify it matches.
+- When absent, no document binding is enforced.
+- MUST be exactly 64 lowercase hex characters when present.
+
+#### `ttl_seconds` (integer, REQUIRED)
+
+Time-to-live in seconds, measured from the moment of issuance.
+
+- MUST be a positive integer.
+- RECOMMENDED range: `60` (1 minute) to `86400` (24 hours).
+- After expiry, the verifier MUST reject the envelope with error code `VPE_EXPIRED`.
+
+#### `nonce` (string, REQUIRED)
+
+A cryptographically random value that ensures the uniqueness of each envelope. The verifier MUST track seen nonces for the duration of their TTL and reject replayed envelopes.
+
+Requirements:
+- MUST be generated using a cryptographically secure random number generator (CSPRNG).
+- RECOMMENDED length: at least 16 bytes (32 hex chars), encoded as lowercase hex.
+- RECOMMENDED format: UUIDv4.
+- The nonce plus `issuer` forms the composite uniqueness key for replay detection.
+
+#### `counter` (integer, REQUIRED)
+
+A monotonically increasing integer that provides ordered sequencing of prompts from a single issuer. The verifier MUST track the last-seen counter per issuer and reject non-monotonic values.
+
+- MUST be a non-negative integer.
+- MUST be strictly greater than the last accepted counter from the same `issuer`.
+- The first envelope from an issuer SHOULD start at `0` or `1`.
+- If a higher counter is accepted, the verifier MUST NOT subsequently accept a lower counter even if the nonce differs.
+
+#### `public_key` (string, OPTIONAL)
+
+The signer's Ed25519 public key, hex-encoded (64 hex characters for 32 bytes). When present, allows self-contained verification without a separate key exchange (Trust On First Use / TOFU mode).
+
+- When absent, the verifier MUST look up the public key by `issuer` through a pre-configured key store.
+- RECOMMENDED for in-band key distribution during development; out-of-band for production.
+
+#### `signature` (string, REQUIRED)
+
+The Ed25519 signature over the canonical signing payload (see Signing Algorithm section), hex-encoded.
+
+- MUST be exactly 128 lowercase hex characters (64 bytes raw).
+- MUST be the last field in serialized JSON (recommended for readability, not protocol-enforced).
+
+### Signing Algorithm
+
+#### Key Generation
+
+Ed25519 key pairs MUST be generated using a cryptographically secure random number generator.
+
+- Private key: 32 random bytes.
+- Public key: 32 bytes (derived from private key via Curve25519 scalar multiplication).
+- RECOMMENDED libraries: `cryptography` (Python), `libsodium`/`NaCl` (C/Rust), `ed25519-donna` (embedded).
+
+#### Canonical Signing Payload
+
+**Only fields other than `signature` are signed.** The signature field is excluded from the signing payload because it is added after signing.
+
+The canonical payload is constructed by serializing the envelope *without* the `signature` field, keys sorted alphabetically, no whitespace, no trailing newline.
+
+**Payload construction procedure:**
+
+1. Remove the `signature` key from the envelope.
+2. Serialize the remaining object to JSON with:
+   - Keys sorted in alphabetical order.
+   - No whitespace (compact serialization).
+   - No trailing newline.
+3. Encode the resulting JSON string as UTF-8 bytes.
+4. Sign the bytes with the issuer's Ed25519 private key.
+
+**Signature algorithm:**
+- Algorithm: Ed25519 (EdDSA with Curve25519)
+- Hash: SHA-512 (internal to Ed25519)
+- Signature output: 64 bytes
+- Encoding: lowercase hex (128 characters)
+
+### Verification Rules
+
+Verification proceeds in the order listed below. If any check fails, the verifier MUST reject the message immediately.
+
+| Step | Check | Error Code |
+|------|-------|------------|
+| 1 | Parse `_meta.vpe` JSON | `VPE_MALFORMED` (on parse failure) |
+| 2 | Validate all REQUIRED fields present and correct types | `VPE_MALFORMED` |
+| 3 | Check `vpe_version` is a supported version | `VPE_VERSION_MISMATCH` |
+| 4 | Check TTL: `(now - issued_at) <= ttl_seconds` | `VPE_EXPIRED` |
+| 5 | Extract public key (from `public_key` field or local store by `issuer`) | `VPE_UNKNOWN_ISSUER` |
+| 6 | Verify Ed25519 signature over canonical payload | `VPE_INVALID_SIGNATURE` |
+| 7 | Check audience matches this agent's identity | `VPE_WRONG_AUDIENCE` |
+| 8 | Check `(issuer, nonce)` not replayed | `VPE_NONCE_REPLAY` |
+| 9 | Check `counter` strictly greater than last seen for this `issuer` | `VPE_COUNTER_NON_MONOTONIC` |
+
+If all checks pass, the message is processed. Scope enforcement (checking `scope.allowed_tools`, `scope.max_tokens`, `scope.max_cost`, `scope.allowed_domains`) applies dynamically throughout execution.
+
+### Verification Modes
+
+Implementations SHOULD support three modes of VPE verification:
+
+1. **Pass-through** — ignore VPE fields entirely (no change to existing MCP behavior). Unsigned messages processed normally.
+2. **Audit** — verify VPE if present, log verification results, process message regardless of verification outcome (recommended for migration).
+3. **Enforce** — verify if present; fail with MCP error on verification failure. May also reject unsigned messages if policy requires.
+
+### Error Codes
+
+When VPE verification fails, the server returns a JSON-RPC error response with MCP application-level error codes. The following error codes are reserved for VPE:
+
+| Code | Name | HTTP-like Status | Description |
+|------|------|-----------------|-------------|
+| -32001 | `VPE_MALFORMED` | 400 | Envelope parse failure, missing fields, or type errors |
+| -32002 | `VPE_VERSION_MISMATCH` | 400 | Unsupported vpe_version |
+| -32003 | `VPE_EXPIRED` | 410 | Envelope TTL has elapsed |
+| -32004 | `VPE_INVALID_SIGNATURE` | 403 | Ed25519 signature verification failed |
+| -32005 | `VPE_NONCE_REPLAY` | 409 | Nonce has already been used within TTL |
+| -32006 | `VPE_COUNTER_NON_MONOTONIC` | 409 | Counter not strictly increasing |
+| -32007 | `VPE_SCOPE_VIOLATION` | 403 | Requested operation exceeds declared scope |
+| -32008 | `VPE_WRONG_AUDIENCE` | 403 | Audience does not match this agent |
+| -32009 | `VPE_UNKNOWN_ISSUER` | 401 | Issuer public key not found |
+
+Error codes are in the `-32000` to `-32099` range, which is reserved for MCP application-level errors as per the JSON-RPC 2.0 specification.
+
+When a VPE verification fails, the server returns a structured error:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32004,
+    "message": "VPE_INVALID_SIGNATURE",
+    "data": {
+      "reason": "Ed25519 signature does not match canonical payload",
+      "vpe": {
+        "valid": false,
+        "stages": {
+          "parse": true,
+          "version": true,
+          "expiry": true,
+          "signature": false,
+          "audience": true,
+          "nonce": true,
+          "counter": true
+        }
+      }
+    }
+  }
+}
+```
+
+### Capability Negotiation
+
+MCP servers that support VPE verification SHOULD advertise this capability during initialization:
+
+```json
+{
+  "capabilities": {
+    "experimental": {
+      "vpe": {
+        "version": "1.0",
+        "mode": "enforce",
+        "public_keys": ["<hex_public_key_of_server>"]
+      }
+    }
+  }
+}
+```
+
+MCP clients that support VPE signing MAY advertise this in their capabilities:
+
+```json
+{
+  "capabilities": {
+    "experimental": {
+      "vpe": {
+        "version": "1.0"
+      }
+    }
+  }
+}
+```
+
+## Key Exchange
+
+### In-Band (Self-Contained / TOFU)
+
+The envelope can carry the signer's public key in the optional `public_key` field. This allows verification without a separate key exchange. The verifier uses Trust On First Use (TOFU): the first public key seen for an `issuer` is trusted for subsequent verifications.
+
+- PRO: Zero configuration for development and testing
+- CON: Vulnerable to initial key substitution (first-seen-wins)
+- RECOMMENDED for: development, trusted networks, single-tenant deployments
+
+### Out-of-Band (Recommended for Production)
+
+Public keys are distributed via a separate secure channel before any signed messages are exchanged:
+
+- Fixed in agent/server configuration files
+- Published via Web Key Directory (WKD)
+- Distributed via secrets managers (HashiCorp Vault, AWS Secrets Manager)
+- Verified via Key Transparency / Certificate Transparency logs
+
+A `kid` (Key ID) field may be added to the envelope in future versions to reference a pre-shared key without transmitting it in-band.
+
+### Key Rotation
+
+- Verifiers SHOULD accept envelopes signed with the **current** or the **previous** key during rotation windows.
+- Grace period: at minimum 2× the maximum configured TTL across all issuers.
+- Revocation: remove the key from the trusted set. Previously signed envelopes using that key will fail verification.
+
+## Rationale
+
+### Design Decisions
+
+**Ed25519 over RSA/ECDSA:** Ed25519 was chosen for its combination of fast verification (~0.05ms on modern CPUs), small key sizes (32 bytes), and resistance to side-channel attacks. Ed25519 signatures are deterministic (no nonce leakage risk unlike ECDSA), which simplifies implementation and testing.
+
+**Scope as part of the envelope (not the MCP message):** By embedding the execution scope inside the signed envelope rather than deriving it from the MCP method/params, the scope is cryptographically bound to the message. An attacker cannot swap a signed "read-only" prompt into an unsigned "write" scope.
+
+**Nonce + counter dual protection:** Nonces prevent replay of identical messages. Counters prevent replay or reordering of different messages from the same issuer. Together they provide comprehensive replay protection. The counter also detects dropped or skipped messages.
+
+**Canonical JSON over CBOR/Protobuf:** While binary formats are more compact, canonical JSON (sorted keys, no whitespace) is universally available in every programming language without additional libraries. This lowers the barrier to adoption.
+
+**VPE inside `_meta` rather than a new top-level field:** The existing `_meta` object on MCP messages is the designated extension point for protocol-level metadata. Adding VPE there requires no changes to MCP's JSON-RPC message structure, which makes it fully backward-compatible.
+
+### Why `prompt` is separate from MCP params
+
+VPE's `prompt` field contains the semantic instruction, while `params` contains the structured arguments for the specific MCP method. This distinction exists because:
+
+1. A VPE envelope is method-agnostic — the same signed prompt could theoretically be delivered via different MCP methods (e.g., `prompts/get` vs `tools/call`).
+2. The `prompt` field provides a human-readable instruction that survives protocol evolution, while `params` are method-specific and may change between spec versions.
+3. For audit and logging, the `prompt` alone is meaningful without requiring MCP method deserialization.
+
+## Backward Compatibility
+
+This SEP introduces optional additions to MCP messages but does not change the core MCP protocol or wire format.
+
+**Impact Assessment:**
+
+- **No Impact**: Existing MCP servers and clients continue to work unchanged. Unsigned messages are processed normally.
+- **Additive**: The `_meta.vpe` field is purely additive. Servers that do not recognize it ignore it (as per existing `_meta` semantics).
+- **Client/Server Implementation Required**: Only servers that want to enforce VPE and clients that want to sign messages need to implement this SEP.
+
+**Migration Path:**
+
+1. Phase 1 — Audit: Servers accept signed messages, verify them, log results, but process regardless.
+2. Phase 2 — Selective: Servers enforce VPE for specific endpoints or specific issuer identities.
+3. Phase 3 — Full: Servers enforce VPE for all traffic, reject unsigned messages with a policy error.
+
+No protocol-level backward compatibility issues exist, as this SEP only adds an optional field to `_meta`.
+
+## Reference Implementation
+
+A complete reference implementation is available as part of the **Seal** project:
+
+- **VPE Core** (`seal/vpe.py`) — Ed25519 signing and verification with full verification pipeline (schema validation, signature check, TTL, nonce replay, counter monotonicity, audience check, scope enforcement).
+- **Hermes MCP middleware** (`integration/hermes_vpe_middleware.py`) — MCP middleware plugin that intercepts tool call requests, verifies VPE envelopes before execution, and enforces scope constraints.
+- **Division memory signing** (`integration/division_vpe_signer.py`) — Signs MCP `memory_remember` episodes for cross-agent audit trail.
+- **EPD scanner** (`seal/epd.py`) — Two-pass injection detection (regex + LLM) for unsigned prompts, as a complementary defense layer.
+- **Secrets Broker** (`seal/secrets_broker.py`) — Credential proxy that integrates with VPE scope for key distribution and rotation.
+
+Path: `~/projects/seal/` (private repository, will be open-sourced under the Seal project).
+
+## Security Implications
+
+### Security Benefits
+
+| Threat | Mitigation |
+|--------|-----------|
+| Attacker replays a captured signed message | Nonce (replay detection) + counter (ordering) |
+| Attacker modifies message content | Ed25519 signature (tamper evidence) |
+| Attacker forges a message without the private key | Ed25519 existential unforgeability |
+| Attacker uses an expired message | TTL expiry check |
+| Attacker redirects message to a different agent | Audience check |
+| Attacker escalates from authorized tool to unauthorized tool | Scope enforcement |
+| Attacker compromises the signing key | Key rotation + revocation |
+| Attacker reorders messages to change semantics | Monotonic counter |
+| Attacker replays across agent restarts | Persistent nonce store (optional, RECOMMENDED) |
+
+### Security Considerations
+
+**Canonicalization attacks:** JSON parsing differences can produce different canonical payloads. Implementations MUST:
+- Reject JSON with duplicate keys (last-write-wins is not safe for signing).
+- Use the same JSON serialization library for both signing and verification.
+- Normalize numeric precision before signing.
+
+**Side-channel considerations:**
+- Signature verification timing SHOULD use constant-time comparison to prevent timing side-channel attacks on the public key.
+- Error messages SHOULD NOT reveal whether a specific `issuer` has a registered key (to prevent attacker enumeration).
+
+**Clock synchronization:** TTL verification depends on clock accuracy. Verifiers SHOULD use NTP-synchronized clocks with a tolerance of ±30 seconds.
+
+### Limitations
+
+- **Not a content filter** — VPE authenticates, it does not sanitize. Combine with an injection detector (e.g., EPD) for content analysis.
+- **Key management is hard** — lost or compromised keys bypass all VPE security. Production deployments MUST use HSM-backed keys or hardware security modules.
+- **Does not protect against in-model attacks** — if the model itself is compromised, VPE cannot help.
+- **Adds latency** — signing and verification add ~0.05-0.2ms each with native Ed25519 implementations (benchmarked: 0.059ms for 1KB payloads, 0.243ms for 100KB payloads).
+
+### Residual Risks
+
+- **TOFU vulnerability**: Self-contained public key mode (`public_key` field) is vulnerable to initial key substitution if intercepted on the first transmission.
+- **Key management complexity**: Organizations with many issuers will need automated key rotation and revocation infrastructure.
+- **User override risk**: In Audit mode, operators may approve verification failures, defeating the security benefit.
+- **Nonce storage exhaustion**: Large-scale deployments need bounded replay detection stores (Bloom filter with TTL-aware eviction is RECOMMENDED).
+
+## Appendix A: Complete Example Exchange
+
+### Client Signs a Tool Call
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "database_query",
+    "arguments": {
+      "query": "SELECT * FROM users WHERE org_id = 42"
+    },
+    "_meta": {
+      "vpe": {
+        "version": "1.0",
+        "envelope": {
+          "vpe_version": "1.0",
+          "prompt": "query user records for organization 42",
+          "scope": {
+            "allowed_tools": ["database_query", "search_files"],
+            "max_tokens": 2000,
+            "max_cost": 0.05,
+            "allowed_domains": []
+          },
+          "issuer": "user:alice",
+          "audience": "agent:hermes-production",
+          "doc_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "ttl_seconds": 300,
+          "nonce": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+          "counter": 42,
+          "signature": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+      }
+    }
+  }
+}
+```
+
+### Server Responds with Verified Execution (Success)
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "[query results: 127 rows from users WHERE org_id = 42]"
+      }
+    ],
+    "_meta": {
+      "vpe_status": {
+        "verified": true,
+        "verification_time_ms": 0.15
+      }
+    }
+  }
+}
+```
+
+### Server Rejects Due to Scope Violation
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "error": {
+    "code": -32007,
+    "message": "VPE_SCOPE_VIOLATION",
+    "data": {
+      "reason": "Tool 'write_file' is not in allowed_tools: ['database_query', 'search_files']",
+      "vpe": {
+        "valid": false,
+        "stages": {
+          "parse": true,
+          "version": true,
+          "expiry": true,
+          "signature": true,
+          "audience": true,
+          "nonce": true,
+          "counter": true,
+          "scope": false
+        },
+        "scope_details": {
+          "requested_tool": "write_file",
+          "allowed_tools": ["database_query", "search_files"]
+        }
+      }
+    }
+  }
+}
+```
+
+## Appendix B: Graceful Degradation Strategies
+
+| Mode | Unsigned Message | Valid VPE | Invalid VPE | Use Case |
+|------|-----------------|-----------|-------------|----------|
+| Pass-through | Process | Process without verification | Process without verification | Migration, dev |
+| Audit | Process (log unverified) | Process (log verified) | Process (log failure) | Staged rollout |
+| Enforce (soft) | Process (log unverified) | Process (log verified) | Reject | Production with legacy issuers |
+| Enforce (strict) | Reject with VPE_REQUIRED | Process | Reject | Hardened production |
+
+## References
+
+1. [Model Context Protocol Specification](https://spec.modelcontextprotocol.io/)
+2. [Verified Prompt Envelope Protocol v1.0](https://seal.vpe/spec/v1.0)
+3. [Ed25519 (RFC 8032)](https://datatracker.ietf.org/doc/html/rfc8032)
+4. [JSON Schema draft-07](https://json-schema.org/)
+5. [Seal Reference Implementation](https://github.com/nousresearch/seal)
+6. [OWASP LLM Top 10 — Prompt Injection](https://genai.owasp.org/)
