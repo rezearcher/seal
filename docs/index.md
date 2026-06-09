@@ -39,7 +39,7 @@ Seal has three subsystems:
 | **EPD Scanner** | Two-pass: regex (91%+) then LLM classification for ambiguous cases | `seal.epd` |
 | **Secrets Broker** | Encrypted credential store, placeholder resolution, audit log | `seal.broker`, `seal.credential_store` |
 | **CLI** | `genkey`, `sign`, `verify`, `secrets`, `audit`, `status` | `seal.cli` |
-| **Integrations** | Hermes MCP middleware, Division memory signing | `integration/` |
+| **Integrations** | Hermes MCP middleware, Division memory signing | `seal/integration/` |
 
 ## Project Status
 

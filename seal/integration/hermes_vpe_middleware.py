@@ -5,20 +5,26 @@ Integrates VPE (Verified Prompt Envelope) verification into the Hermes
 tool call pipeline. When enabled, every tool call is checked against the
 VPE envelope of the current prompt before execution.
 
-Two modes:
-  - ENFORCE: Reject tool calls that fail VPE verification
-  - AUDIT: Log verification failures but allow execution (warn-only)
+Three verification decisions (P6.3 — Graceful Degradation):
+  - **Unsigned prompts** (raw text): Logged as "unverified" with warning.
+    Allowed in both strict and lenient modes (backward compatibility).
+  - **Expired envelopes** (TTL exceeded): Logged as expired, prompt still
+    executed. Allowed in both strict and lenient modes.
+  - **Invalid signatures** (crypto failure): Rejected in strict (enforce)
+    mode with clear error. Allowed but logged in lenient (audit) mode.
 
-This is designed to be loaded as a Hermes plugin via the plugin system
-(pre_tool_call hook), or used programmatically as a standalone wrapper.
+Two modes:
+  - ENFORCE (strict): Invalid signatures rejected; other degradations logged.
+  - AUDIT (lenient): All degradations logged-but-allowed.
 
 Usage:
-    from integration.hermes_vpe_middleware import VPEMiddleware
+    from seal.integration.hermes_vpe_middleware import VPEMiddleware
 
     middleware = VPEMiddleware(mode="audit")
     result = middleware.check_tool_call(
         tool_name="terminal",
         tool_args={"command": "curl http://...", "timeout": 30},
+        prompt="the original prompt text",
         prompt_envelope=signed_envelope,
     )
 """
@@ -33,13 +39,24 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # Try to import seal — fall back gracefully if not installed
 try:
-    from seal import vpe_sign, vpe_verify
-    from seal.vpe import VPEResult, generate_keypair, load_or_generate_keypair, VPE_VERSION
-    from seal.epd import scan as epd_scan
+    from seal.vpe import (
+        VPE_VERSION,
+        VPEResult,
+        generate_keypair,
+        load_or_generate_keypair,
+        vpe_sign as _vpe_sign_raw,
+        vpe_verify as _vpe_verify_raw,
+    )
+    from seal.epd import scan as epd_scan, EPDResult
     _SEAL_AVAILABLE = True
 except ImportError:
     _SEAL_AVAILABLE = False
     VPEResult = None  # type: ignore
+    VPE_VERSION = "1.0"
+    load_or_generate_keypair = None  # type: ignore
+    _vpe_verify_raw = None  # type: ignore
+    epd_scan = None  # type: ignore
+    EPDResult = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -115,15 +132,28 @@ class VPECheckResult:
         decision: "allow", "deny", or "audit_logged".
         reason: Human-readable explanation.
         verified: Whether VPE verification was actually performed.
+        degradation: Type of degradation applied, or None if no degradation.
+            One of: None, "unsigned", "expired", "invalid_signature", "verify_error".
+        mode: The VPE mode at decision time ("audit" or "enforce").
     """
 
-    __slots__ = ("allowed", "decision", "reason", "verified")
+    __slots__ = ("allowed", "decision", "reason", "verified", "degradation", "mode")
 
-    def __init__(self, allowed: bool, decision: str, reason: str = "", verified: bool = True):
+    def __init__(
+        self,
+        allowed: bool,
+        decision: str,
+        reason: str = "",
+        verified: bool = True,
+        degradation: Optional[str] = None,
+        mode: str = "audit",
+    ):
         self.allowed = allowed
         self.decision = decision
         self.reason = reason
         self.verified = verified
+        self.degradation = degradation
+        self.mode = mode
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -131,24 +161,31 @@ class VPECheckResult:
             "decision": self.decision,
             "reason": self.reason,
             "verified": self.verified,
+            "degradation": self.degradation,
+            "mode": self.mode,
         }
 
     def __repr__(self) -> str:
-        return f"<VPECheckResult {self.decision}: {self.reason}>"
+        deg = f" [degradation={self.degradation}]" if self.degradation else ""
+        return f"<VPECheckResult {self.decision}: {self.reason}{deg}>"
 
 
 class VPEMiddleware:
     """VPE verification middleware for Hermes tool calls.
 
     Wraps tool call dispatch with VPE envelope verification and optional
-    EPD scanning.
+    EPD scanning. Implements P6.3 graceful degradation:
+
+    - Unsigned prompts (raw text): logged as "unverified" → allowed.
+    - Expired envelopes: logged as expired → allowed (both strict/lenient).
+    - Invalid signatures: rejected in enforce mode, allowed in audit mode.
 
     Usage:
         middleware = VPEMiddleware()
         middleware.ensure_keys()
         result = middleware.check_tool_call(
             tool_name="terminal",
-            tool_args={"command": "rm -rf /"},
+            tool_args={"command": "ls"},
             prompt="the original prompt text",
         )
     """
@@ -177,6 +214,10 @@ class VPEMiddleware:
         # Nonce replay cache (in-memory set)
         self._seen_nonces: set = set()
 
+        # Envelope first-seen timestamps for TTL expiry checking
+        # Keyed by nonce → time.time() when first verified
+        self._envelope_timestamps: Dict[str, float] = {}
+
     # ------------------------------------------------------------------
     # Key management
     # ------------------------------------------------------------------
@@ -193,10 +234,8 @@ class VPEMiddleware:
         try:
             priv_path = os.path.join(self._key_dir, "vpe_private.key")
             if os.path.exists(priv_path):
-                from seal.vpe import load_keypair
-                sk, pk = load_keypair(self._key_dir)
+                sk, pk = load_or_generate_keypair(self._key_dir)
             else:
-                from seal.vpe import load_or_generate_keypair
                 sk, pk = load_or_generate_keypair(self._key_dir)
                 logger.info("VPE: generated new keypair at %s", self._key_dir)
 
@@ -223,23 +262,77 @@ class VPEMiddleware:
     def _scan_prompt(self, prompt: str) -> Dict[str, Any]:
         """Run EPD scan on a prompt.
 
-        Returns scan result dict.
+        Returns scan result dict with 'clean', 'flags', 'llm_used' keys.
         """
         if not _SEAL_AVAILABLE or not self._epd_enabled:
             return {"clean": True, "flags": [], "llm_used": False}
 
         try:
-            from seal.epd import EPDConfig
-            import dataclasses
-            config = EPDConfig(block_threshold=self._epd_min_confidence)
-            result = epd_scan(prompt, config=config)
-            return dataclasses.asdict(result)
+            result = epd_scan(prompt)
+            return {
+                "clean": result.clean,
+                "flags": [
+                    {
+                        "pattern_name": f.pattern_name,
+                        "confidence": f.confidence,
+                        "category": f.category,
+                        "location": f.location_in_prompt,
+                    }
+                    for f in result.flags
+                ],
+                "llm_used": result.llm_used,
+            }
         except Exception as exc:
             logger.warning("VPE: EPD scan failed: %s", exc)
             return {"clean": True, "flags": [], "llm_used": False, "error": str(exc)}
 
     # ------------------------------------------------------------------
-    # Verification
+    # Envelope TTL / expiry tracking
+    # ------------------------------------------------------------------
+
+    def _check_envelope_expiry(self, envelope: Dict[str, Any]) -> Optional[str]:
+        """Check if an envelope has expired based on TTL and first-seen time.
+
+        Since v1.0 envelopes may or may not carry an ``issued_at`` field,
+        we maintain our own first-seen timestamp per nonce. This catches
+        replay of expired envelopes.
+
+        Args:
+            envelope: The VPE envelope dict.
+
+        Returns:
+            An expiry reason string if expired, or None if still valid.
+        """
+        ttl = envelope.get("ttl_seconds", 0)
+        if not isinstance(ttl, int) or ttl <= 0:
+            return None  # no expiry configured
+
+        nonce = envelope.get("nonce", "")
+        if not nonce:
+            return None
+
+        # Check if we have a stored timestamp
+        first_seen = self._envelope_timestamps.get(nonce)
+        if first_seen is not None:
+            elapsed = time.time() - first_seen
+            if elapsed > ttl:
+                return f"envelope expired: {elapsed:.0f}s elapsed > {ttl}s TTL"
+            return None  # still within TTL
+
+        # Also check native issued_at field if present (from seal.vpe)
+        issued_at = envelope.get("issued_at")
+        if isinstance(issued_at, (int, float)) and issued_at > 0:
+            elapsed = time.time() - issued_at
+            if elapsed > ttl:
+                return f"envelope expired: {elapsed:.0f}s elapsed > {ttl}s TTL (issued_at)"
+            return None
+
+        # First time seeing this nonce — record it and treat as fresh
+        self._envelope_timestamps[nonce] = time.time()
+        return None
+
+    # ------------------------------------------------------------------
+    # Verification with graceful degradation
     # ------------------------------------------------------------------
 
     def check_tool_call(
@@ -251,75 +344,177 @@ class VPEMiddleware:
     ) -> VPECheckResult:
         """Check if a tool call should be allowed.
 
-        The check proceeds through these stages:
-        1. Short-circuit: if VPE is disabled, allow
-        2. Skip tools: if tool is in skip list, allow
-        3. EPD scan: if enabled, scan the prompt for injection
-        4. VPE verify: if envelope provided, verify it
+        Implements P6.3 graceful degradation:
+        - Unsigned (raw text) prompts: logged as unverified, always allowed.
+        - Expired envelopes: logged, always allowed (both strict & lenient).
+        - Invalid signatures: rejected in enforce mode, logged in audit mode.
 
         Args:
             tool_name: Name of the tool being called.
             tool_args: Arguments to the tool.
             prompt: The original prompt text (for EPD scanning).
-            prompt_envelope: An optional VPE envelope to verify.
+            prompt_envelope: An optional VPE envelope dict to verify.
 
         Returns:
-            VPECheckResult with the decision.
+            VPECheckResult with the decision and degradation detail.
         """
+        is_enforce = (self._mode == "enforce")
+
         # Stage 1: Disabled
         if not self._enabled:
-            return VPECheckResult(True, "allow", "VPE disabled", verified=False)
+            return VPECheckResult(True, "allow", "VPE disabled", verified=False, mode=self._mode)
 
         # Stage 2: Skip tools
         if tool_name in self._skip_tools:
-            return VPECheckResult(True, "allow", f"tool '{tool_name}' is in skip list")
+            return VPECheckResult(
+                True, "allow",
+                f"tool '{tool_name}' is in skip list",
+                mode=self._mode,
+            )
 
-        # Stage 3: EPD scan
+        # Stage 3: EPD scan (on prompt text, regardless of envelope)
         if prompt and self._epd_enabled:
             epd_result = self._scan_prompt(prompt)
             if not epd_result.get("clean", True):
                 flags = epd_result.get("flags", [])
                 reason = f"EPD injection scan flagged: {[f['pattern_name'] for f in flags]}"
-                if self._mode == "enforce":
-                    return VPECheckResult(False, "deny", reason)
+                if is_enforce:
+                    return VPECheckResult(False, "deny", reason, mode=self._mode)
                 else:
                     logger.warning("VPE (audit): %s", reason)
-                    # Continue to VPE verification even in audit mode
-                    return VPECheckResult(False, "audit_logged", reason)
+                    return VPECheckResult(False, "audit_logged", reason, mode=self._mode)
 
-        # Stage 4: VPE verify
-        if prompt_envelope is not None:
-            if not _SEAL_AVAILABLE:
+        # Stage 4: Detect unsigned prompt (no envelope provided)
+        if prompt_envelope is None:
+            reason = "UNSIGNED PROMPT: no VPE envelope — logged as unverified"
+            logger.warning("VPE (unsigned): %s", reason)
+            # Unsigned prompts always work (core backward-compatibility constraint)
+            return VPECheckResult(
+                True, "allow",
+                reason,
+                verified=False,
+                degradation="unsigned",
+                mode=self._mode,
+            )
+
+        # Stage 5: Verify VPE envelope
+        if not _SEAL_AVAILABLE:
+            reason = "VPE verification requested but seal module unavailable"
+            if is_enforce:
+                return VPECheckResult(False, "deny", reason, verified=False, mode=self._mode)
+            else:
+                logger.warning("VPE (audit): %s", reason)
                 return VPECheckResult(
-                    False,
-                    "deny" if self._mode == "enforce" else "audit_logged",
-                    "VPE verification requested but seal module unavailable",
-                    verified=False,
+                    False, "audit_logged", reason,
+                    verified=False, degradation="verify_error", mode=self._mode,
                 )
 
+        # 5a: Try to verify the envelope
+        # Parse if it's a string
+        if isinstance(prompt_envelope, str):
             try:
-                result = vpe_verify(
-                    prompt_envelope,
-                    public_key=self._public_key,
-                    seen_nonces=self._seen_nonces,
-                    actual_args={"_tool_name": tool_name, **(tool_args or {})},
-                )
-                if not result.valid:
-                    reason = f"VPE verification failed: {result.reason}"
-                    if self._mode == "enforce":
-                        return VPECheckResult(False, "deny", reason)
-                    else:
-                        logger.warning("VPE (audit): %s", reason)
-                        return VPECheckResult(False, "audit_logged", reason)
-            except Exception as exc:
-                reason = f"VPE verify exception: {exc}"
-                if self._mode == "enforce":
-                    return VPECheckResult(False, "deny", reason)
+                envelope = json.loads(prompt_envelope)
+            except (json.JSONDecodeError, ValueError) as exc:
+                reason = f"VPE envelope parse failed: {exc}"
+                if is_enforce:
+                    return VPECheckResult(False, "deny", reason, degradation="verify_error", mode=self._mode)
                 else:
                     logger.warning("VPE (audit): %s", reason)
-                    return VPECheckResult(False, "audit_logged", reason)
+                    return VPECheckResult(
+                        False, "audit_logged", reason,
+                        degradation="verify_error", mode=self._mode,
+                    )
+        else:
+            envelope = prompt_envelope
 
-        return VPECheckResult(True, "allow", "all checks passed")
+        # 5b: Check for envelope-like structure (is this actually a VPE envelope?)
+        # If it looks like raw text wrapped in a dict, treat as unsigned
+        if not isinstance(envelope, dict):
+            reason = "UNSIGNED PROMPT: envelope is not a dict — logged as unverified"
+            logger.warning("VPE (unsigned): %s", reason)
+            return VPECheckResult(
+                True, "allow", reason,
+                verified=False, degradation="unsigned", mode=self._mode,
+            )
+
+        # 5c: Check if this looks like a VPE envelope (has signature field)
+        has_signature = bool(envelope.get("signature", ""))
+        if not has_signature:
+            reason = "UNSIGNED PROMPT: envelope has no signature — logged as unverified"
+            logger.warning("VPE (unsigned): %s", reason)
+            return VPECheckResult(
+                True, "allow", reason,
+                verified=False, degradation="unsigned", mode=self._mode,
+            )
+
+        # 5d: Check expiry FIRST (before crypto verify — it might be a
+        # perfectly valid but expired signature)
+        expiry_reason = self._check_envelope_expiry(envelope)
+        if expiry_reason:
+            logger.warning("VPE (expired): %s — allowing execution", expiry_reason)
+            # Expired envelopes are allowed in both modes (P6.3 spec)
+            return VPECheckResult(
+                True, "allow",
+                f"EXPIRED ENVELOPE: {expiry_reason} (mode: {self._mode})",
+                degradation="expired",
+                mode=self._mode,
+            )
+
+        # 5e: Run vpe_verify for full cryptographic verification
+        try:
+            result = _vpe_verify_raw(
+                envelope,
+                public_key=self._public_key,
+                seen_nonces=self._seen_nonces,
+                actual_args={"_tool_name": tool_name, **(tool_args or {})},
+            )
+        except Exception as exc:
+            reason = f"VPE verify exception: {exc}"
+            if is_enforce:
+                return VPECheckResult(False, "deny", reason, degradation="verify_error", mode=self._mode)
+            else:
+                logger.warning("VPE (audit): %s", reason)
+                return VPECheckResult(
+                    False, "audit_logged", reason,
+                    degradation="verify_error", mode=self._mode,
+                )
+
+        # 5f: Handle verification result with graceful degradation
+        if not result.valid:
+            reason = result.reason
+
+            # Check if this is an expiry failure from vpe_verify
+            is_expiry = "expired" in reason.lower() or "expir" in reason.lower()
+
+            if is_expiry:
+                # Expired envelopes allowed in both modes
+                logger.warning("VPE (expired): %s — allowing execution", reason)
+                return VPECheckResult(
+                    True, "allow",
+                    f"EXPIRED ENVELOPE: {reason} (mode: {self._mode})",
+                    degradation="expired",
+                    mode=self._mode,
+                )
+
+            # This is an invalid signature or other crypto failure
+            if is_enforce:
+                return VPECheckResult(
+                    False, "deny",
+                    f"VPE BLOCKED: {reason}",
+                    degradation="invalid_signature",
+                    mode=self._mode,
+                )
+            else:
+                logger.warning("VPE (audit): %s", reason)
+                return VPECheckResult(
+                    False, "audit_logged",
+                    f"VPE INVALID (audit mode): {reason}",
+                    degradation="invalid_signature",
+                    mode=self._mode,
+                )
+
+        # All checks passed
+        return VPECheckResult(True, "allow", "all checks passed", mode=self._mode)
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +567,9 @@ def on_pre_tool_call(
     Called before every tool invocation. Return a dict with 'veto': True
     to block the call, or None to allow it.
 
+    This handler logs all degradation events (unsigned, expired, invalid)
+    whether or not the tool call is ultimately allowed.
+
     Returns:
         None to allow, or {"veto": True, "reason": "..."} to block.
     """
@@ -387,6 +585,18 @@ def on_pre_tool_call(
         tool_args=tool_args_dict,
         prompt=user_message,
     )
+
+    # Log all degradations regardless of allow/deny
+    if result.degradation:
+        prefix = result.degradation.upper()
+        if result.allowed:
+            log_fn = logger.warning
+        else:
+            log_fn = logger.error
+        log_fn(
+            "VPE %s: tool='%s' allowed=%s reason='%s' mode='%s'",
+            prefix, tool_name_str, result.allowed, result.reason, result.mode,
+        )
 
     if not result.allowed and result.decision == "deny":
         logger.warning(

@@ -529,8 +529,8 @@ No protocol-level backward compatibility issues exist, as this SEP only adds an 
 A complete reference implementation is available as part of the **Seal** project:
 
 - **VPE Core** (`seal/vpe.py`) — Ed25519 signing and verification with full verification pipeline (schema validation, signature check, TTL, nonce replay, counter monotonicity, audience check, scope enforcement).
-- **Hermes MCP middleware** (`integration/hermes_vpe_middleware.py`) — MCP middleware plugin that intercepts tool call requests, verifies VPE envelopes before execution, and enforces scope constraints.
-- **Division memory signing** (`integration/division_vpe_signer.py`) — Signs MCP `memory_remember` episodes for cross-agent audit trail.
+- **Hermes MCP middleware** (`seal/integration/hermes_vpe_middleware.py`) — MCP middleware plugin that intercepts tool call requests, verifies VPE envelopes before execution, and enforces scope constraints.
+- **Division memory signing** (`seal/integration/division_vpe_signer.py`) — Signs MCP `memory_remember` episodes for cross-agent audit trail.
 - **EPD scanner** (`seal/epd.py`) — Two-pass injection detection (regex + LLM) for unsigned prompts, as a complementary defense layer.
 - **Secrets Broker** (`seal/secrets_broker.py`) — Credential proxy that integrates with VPE scope for key distribution and rotation.
 
