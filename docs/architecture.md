@@ -2,20 +2,27 @@
 
 ## Overview
 
-Seal has three subsystems:
+Seal is built around three core subsystems, with supporting subsystems for key
+lifecycle, deployment, and advanced trust models layered on top:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         Seal                                 │
 ├─────────────┬──────────────────────┬────────────────────────┤
 │  VPE Core   │  EPD Scanner         │  Secrets Broker        │
-│             │                      │                        │
-│ Ed25519 /   │ Regex patterns +     │ Encrypted store +      │
-│ HMAC-SHA256 │ LLM fallback for     │ {SECRET:label} proxy   │
-│ signing &   │ injection detection  │ for tool calls         │
-│ verification│                      │                        │
-└─────────────┴──────────────────────┴────────────────────────┘
+│ Ed25519 /   │ Regex + LLM fallback │ Encrypted store +      │
+│ HMAC / multi│ + Unicode-smuggling  │ {SECRET:label} proxy   │
+│ -sig / cert │ defense (T11) for    │ for tool calls         │
+│ chains / HW │ injection detection  │                        │
+├─────────────┴──────────────────────┴────────────────────────┤
+│ Supporting: SQLite stores · Key lifecycle + rotation daemon  │
+│ · Hardware (HSM/TPM/Secure Enclave) · Federation · Rollback  │
+│ · Division audit trail · Adversarial fuzzer                  │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+> For the full module-by-module inventory and per-phase build status, see the
+> root [`ARCHITECTURE.md` → What's Built](../ARCHITECTURE.md).
 
 ## Component Details
 
@@ -30,7 +37,9 @@ Seal has three subsystems:
 - **Ed25519** — Chosen over ECDSA for deterministic signatures (no randomness required), smaller keys, and constant-time verification
 - **Canonical JSON** — Deterministic serialization with sorted keys prevents canonicalization attacks
 - **HMAC-SHA256 fallback** — 10-100x faster for internal use; 32-byte signatures vs Ed25519's 64 bytes
-- **Multi-signing** — `vpe_sign_multi()` signs with multiple keys for multi-party authorization
+- **Multi-signing** — `vpe_sign_multi()` / `vpe_verify_multi()` for N-of-M multi-party authorization
+- **Hierarchical trust** — `verify_certificate()` / `verify_cert_chain()` walk a root→intermediate→signing key chain, enabling delegation and revocation without re-keying every agent
+- **Hardware signing** — `vpe_sign_hardware()` / `vpe_verify_hardware()` keep the private key on a YubiKey/TPM/Secure Enclave
 
 ### EPD Scanner
 
@@ -40,8 +49,10 @@ Seal has three subsystems:
 
 **Design:**
 
-- **Pass 1 — Regex:** 20+ patterns across 5 categories (system prompt override, roleplay, code execution, context manipulation, data extraction). 91%+ detection rate.
-- **Pass 2 — LLM Classifier (optional):** Independent model (separate from execution model) classifies ambiguous cases as injection/normal.
+- **Pass 1 — Regex:** patterns across 5 categories (ignore-instructions, role-switch, delimiter confusion, hidden-instruction markers, tool hallucination). 91%+ detection rate.
+- **Normalization:** strips **all** Unicode format chars (category Cf) + variation selectors and folds homoglyphs/leet before matching, defeating zero-width and interleaving obfuscation.
+- **Unicode-smuggling defense (T11):** `_detect_hidden_unicode()` runs unconditionally — flags and decodes invisible **tag-block** (U+E0000–E007F) and **variation-selector** payloads (e.g. emoji + hidden ASCII), then re-scans the decoded text. See [Threat Model → T11](threat-model.md).
+- **Pass 2 — LLM Classifier (optional):** Independent model (separate from execution model) classifies ambiguous cases, or `llm_scan_all` runs it on every prompt for semantic bypasses that leave no regex trace.
 
 ### Secrets Broker
 
@@ -55,6 +66,18 @@ Seal has three subsystems:
 2. `SecretsBroker.wrap_tool_call()` resolves placeholders from encrypted store
 3. `SecretsBroker.redact()` provides safe logging without exposing values
 4. `AuditLog` records access events (never stores values)
+
+### Supporting Subsystems
+
+| Subsystem | Modules | Purpose |
+|-----------|---------|---------|
+| **Persistent stores** | `seal/store.py` | SQLite (WAL) `NonceStore` + `CounterStore` survive restarts; expired-nonce cleanup |
+| **Key lifecycle** | `seal/key_manager.py`, `seal/key_store.py`, `seal/rotator.py` | SQLite key registry (generated→active→expiring→retired→revoked), auto-rotation guard, rotation daemon (`seal key daemon`) |
+| **Hardware** | `seal/hardware.py` | HSM abstraction — YubiKey/TPM/Secure Enclave; private key never leaves the device |
+| **Federation** | `seal/federation.py` | Cross-agent trust anchors and federated audit trail |
+| **Rollback** | `seal/rollback.py` | One-toggle disable + full config rollback; audit data preserved |
+| **Division audit** | `seal/division_audit.py`, `seal/integration/division_vpe_audit.py` | Store and query VPE verification results as Division memory episodes |
+| **Adversarial fuzzer** | `seal/epd/fuzzer.py` | Mutation fuzzing of injection patterns (`seal fuzz`) to measure EPD catch rate |
 
 ## Data Flow
 

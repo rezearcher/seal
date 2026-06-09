@@ -10,11 +10,13 @@
 
 Seal replaces linguistic injection detection with **cryptographic provenance verification** for AI agent prompts. Every prompt gets an Ed25519-signed envelope that proves who authorized it, what scope it has, and that it hasn't been tampered with.
 
-- **VPE Core** — Sign and verify prompts with Ed25519 or HMAC-SHA256
-- **EPD Scanner** — Pre-LLM injection detection with regex + LLM fallback
-- **Secrets Broker** — Keep credentials out of model context
-- **CLI** — `seal sign`, `seal verify`, `seal genkey`, `seal secrets`
-- **Integration** — MCP middleware for Hermes and Division
+- **VPE Core** — Sign/verify prompts with Ed25519 or HMAC-SHA256, **N-of-M multi-signature**, **hierarchical issuer cert chains**, and **hardware (HSM/TPM/Secure Enclave) signing**
+- **EPD Scanner** — Pre-LLM injection detection: regex + LLM fallback, plus **Unicode-smuggling defense** (invisible tag-block / variation-selector payloads) and an adversarial fuzzer
+- **Secrets Broker** — Keep credentials out of model context (`{SECRET:label}` proxy, Fernet-encrypted store, access audit)
+- **Key lifecycle** — SQLite-backed key registry, rotation daemon, persistent nonce/counter replay protection
+- **CLI** — 18 commands: `sign`, `verify`, `genkey`, `secrets`, `key {rotate,revoke,daemon,…}`, `audit`, `rollback`, `hardware`, `fuzz`, `status`
+- **Integration** — MCP middleware for Hermes + Division audit trail, with one-toggle rollback
+- **Tested** — 517 tests across core, EPD, crypto-bypass, key lifecycle, hardware, federation, and e2e suites
 
 ## Quickstart
 
@@ -72,11 +74,15 @@ Seal has three subsystems:
 
 | Component | Description | Module |
 |-----------|-------------|--------|
-| **VPE Core** | Ed25519 sign/verify, key generation, canonical JSON serialization | `seal/core.py`, `seal/vpe.py` |
-| **EPD Scanner** | Two-pass: regex (91%+) then LLM classification for ambiguous cases | `seal/epd/` |
-| **Secrets Broker** | Encrypted credential store, placeholder resolution, audit log | `seal/broker.py`, `seal/credential_store.py` |
-| **CLI** | `genkey`, `sign`, `verify`, `secrets`, `audit` | `seal/cli.py` |
-| **Integrations** | Hermes MCP middleware, Division memory signing | `integration/` |
+| **VPE Core** | Ed25519/HMAC sign/verify, multi-sig, cert chains, hardware signing, canonical JSON | `seal/core.py`, `seal/vpe.py` |
+| **EPD Scanner** | Two-pass regex (91%+) + LLM, Unicode-smuggling defense (T11), fuzzer | `seal/epd/` |
+| **Secrets Broker** | Fernet-encrypted credential store, placeholder resolution, audit log | `seal/broker.py`, `seal/credential_store.py` |
+| **Key lifecycle** | SQLite key registry, rotation daemon, persistent nonce/counter stores | `seal/key_manager.py`, `seal/key_store.py`, `seal/store.py` |
+| **Hardware / Federation / Rollback** | HSM signing; cross-agent trust; one-toggle rollback | `seal/hardware.py`, `seal/federation.py`, `seal/rollback.py` |
+| **CLI** | 18 commands: `genkey`, `sign`, `verify`, `secrets`, `key`, `audit`, `rollback`, `hardware`, `fuzz`, `status` | `seal/cli.py` |
+| **Integrations** | Hermes MCP middleware, Division memory signing + audit trail | `seal/integration/` |
+
+> **Full module inventory & per-phase build status:** [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ### VPE Envelope Format
 

@@ -35,3 +35,16 @@ Thumbs.db
 # Build / benchmarks
 benchmark_*.py
 profiling/
+
+# Scratch / temp artifacts (write-probes, debug dumps, editor backups)
+tmp_test*.txt
+test_debug.txt
+debug.txt
+*.py.txt
+*_test_write*.py
+test_write*.py
+test_write_check.txt
+_import_patch.txt
+_fix_all.sh
+*_results.txt
+install_*.txt
