@@ -18,8 +18,12 @@ class EPDFlag:
         category: The pattern category this flag belongs to (e.g.
             ``"ignore_instructions"``, ``"role_switch"``, ``"delimiter"``,
             ``"hidden_instruction"``, ``"tool_hallucination"``).
-        evidence: The exact substring that matched, for human review.
-        source: Which pass produced the flag — ``"regex"`` or ``"llm"``.
+        evidence: The matched substring, for human review. Equals
+            ``prompt[start:end]`` for ``regex`` flags; for ``normalize`` flags
+            covering invisible smuggling it is the *decoded* payload (the raw
+            span is invisible), so it intentionally differs from the slice.
+        source: Which pass produced the flag — ``"regex"``, ``"llm"``, or
+            ``"normalize"`` (invisible-payload smuggling detection).
     """
 
     pattern_name: str

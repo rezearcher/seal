@@ -9,11 +9,12 @@ from __future__ import annotations
 import json
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 DEFAULT_AUDIT_PATH = "~/.seal/audit.jsonl"
 MAX_ENTRIES = 10000
+MAX_AGE_DAYS = 30
 
 
 def _utc_now_iso() -> str:
@@ -23,9 +24,15 @@ def _utc_now_iso() -> str:
 class AuditLog:
     """Append-only JSONL audit log with size-bounded auto-rotation."""
 
-    def __init__(self, path: str = DEFAULT_AUDIT_PATH, max_entries: int = MAX_ENTRIES) -> None:
+    def __init__(
+        self,
+        path: str = DEFAULT_AUDIT_PATH,
+        max_entries: int = MAX_ENTRIES,
+        max_age_days: int = MAX_AGE_DAYS,
+    ) -> None:
         self.path = Path(path).expanduser()
         self.max_entries = max_entries
+        self.max_age_days = max_age_days
         self._lock = threading.Lock()
 
     # -------------------------------------------------------------- helpers
@@ -55,18 +62,50 @@ class AuditLog:
             self._rotate_locked()
 
     def _rotate_locked(self) -> None:
-        """Prune oldest lines so the file holds at most ``max_entries``.
+        """Prune lines so the file stays within count and age bounds.
 
-        Caller must hold ``self._lock``.
+        Entries are pruned when they exceed ``max_entries`` (count-based) or are
+        older than ``max_age_days`` (time-based). Caller must hold ``self._lock``.
         """
         try:
             with self.path.open("r", encoding="utf-8") as fh:
                 lines = fh.readlines()
         except FileNotFoundError:  # pragma: no cover
             return
-        if len(lines) <= self.max_entries:
+
+        original_len = len(lines)
+        kept = lines
+
+        # Time-based pruning. Entries are appended in chronological order, so the
+        # oldest live at the front: walk forward only until the first entry still
+        # inside the retention window, then slice. O(pruned), not O(total).
+        if self.max_age_days is not None and kept:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=self.max_age_days)
+            drop = 0
+            for line in kept:
+                stripped = line.strip()
+                if not stripped:
+                    drop += 1
+                    continue
+                try:
+                    ts = datetime.fromisoformat(json.loads(stripped)["timestamp"])
+                except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                    # Can't parse this entry's age — stop pruning to be safe.
+                    break
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if ts >= cutoff:
+                    break
+                drop += 1
+            if drop:
+                kept = kept[drop:]
+
+        # Count-based pruning.
+        if len(kept) > self.max_entries:
+            kept = kept[-self.max_entries:]
+
+        if len(kept) == original_len:
             return
-        kept = lines[-self.max_entries:]
         tmp = self.path.with_name(self.path.name + ".tmp")
         fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
@@ -108,11 +147,59 @@ class AuditLog:
             }
         )
 
-    def query(self, label: str | None = None, limit: int = 50) -> list[dict]:
-        """Return up to ``limit`` most-recent entries, newest last.
+    def log_vpe_verification(
+        self,
+        envelope_hash: str,
+        issuer: str,
+        audience: str,
+        result: str,  # "valid" | "invalid" | "expired"
+        reason: str = "",
+    ) -> None:
+        """Record a VPE (Verifiable Provenance Envelope) verification event."""
+        self._append(
+            {
+                "timestamp": _utc_now_iso(),
+                "type": "vpe_verification",
+                "envelope_hash": envelope_hash,
+                "issuer": issuer,
+                "audience": audience,
+                "result": result,
+                "reason": reason,
+            }
+        )
 
-        Optionally filtered by ``label``. Malformed lines are skipped.
+    def query(
+        self,
+        label: str | None = None,
+        limit: int = 50,
+        *,
+        status: str | None = None,
+        since: str | None = None,
+        tail: int | None = None,
+    ) -> list[dict]:
+        """Return up to ``tail`` (or ``limit``) most-recent entries, newest last.
+
+        Filters (all optional, AND-combined):
+          - ``label``  — match credential-audit ``label`` field exactly.
+          - ``status`` — match the ``result`` field (e.g. valid/invalid/expired).
+          - ``since``  — ISO timestamp; keep entries with ``timestamp >= since``.
+
+        ``tail`` is the preferred name for the count cap; ``limit`` is kept as a
+        backward-compatible alias and used when ``tail`` is not given. Malformed
+        lines are skipped.
         """
+        n = tail if tail is not None else limit
+
+        since_dt: datetime | None = None
+        if since is not None:
+            try:
+                since_dt = datetime.fromisoformat(since)
+            except ValueError:
+                since_dt = None
+            else:
+                if since_dt.tzinfo is None:
+                    since_dt = since_dt.replace(tzinfo=timezone.utc)
+
         with self._lock:
             try:
                 with self.path.open("r", encoding="utf-8") as fh:
@@ -130,7 +217,18 @@ class AuditLog:
                 continue
             if label is not None and entry.get("label") != label:
                 continue
+            if status is not None and entry.get("result") != status:
+                continue
+            if since_dt is not None:
+                try:
+                    ts = datetime.fromisoformat(entry.get("timestamp"))
+                except (TypeError, ValueError):
+                    continue
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if ts < since_dt:
+                    continue
             entries.append(entry)
-        if limit is not None and limit >= 0:
-            return entries[-limit:]
+        if n is not None and n >= 0:
+            return entries[-n:]
         return entries
