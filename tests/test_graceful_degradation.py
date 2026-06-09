@@ -25,11 +25,11 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from seal.vpe import vpe_sign, vpe_verify, generate_keypair, VPE_VERSION
 
-try:
-    from integration.hermes_vpe_middleware import VPEMiddleware, VPECheckResult, _SEAL_AVAILABLE
-except ImportError:
-    # Fall back to relative import
-    from seal.integration.hermes_vpe_middleware import VPEMiddleware, VPECheckResult, _SEAL_AVAILABLE
+from seal.integration.hermes_vpe_middleware import (
+    VPEMiddleware,
+    VPECheckResult,
+    _SEAL_AVAILABLE,
+)
 
 
 # ---------------------------------------------------------------------------

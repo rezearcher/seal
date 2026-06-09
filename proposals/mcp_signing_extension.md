@@ -335,9 +335,9 @@ project:
 
 - **VPE Core** (sign + verify): `seal/vpe.py` — Ed25519 signing and
   verification with full check pipeline
-- **Hermes MCP middleware**: `integration/hermes_vpe_middleware.py` —
+- **Hermes MCP middleware**: `seal/integration/hermes_vpe_middleware.py` —
   plugin that wraps MCP tool calls with VPE verification
-- **Division memory signing**: `integration/division_vpe_signer.py` —
+- **Division memory signing**: `seal/integration/division_vpe_signer.py` —
   signs MCP memory_remember episodes for audit trail
 - **EPD scanner**: `seal/epd.py` — two-pass injection detection
   (regex + LLM) for unsigned prompts

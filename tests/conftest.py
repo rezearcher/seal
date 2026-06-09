@@ -8,12 +8,8 @@ _SEAL_ROOT = os.path.expanduser("~/projects/seal")
 if _SEAL_ROOT not in sys.path:
     sys.path.insert(0, _SEAL_ROOT)
 
-import importlib.util
-_MW_PATH = os.path.join(_SEAL_ROOT, "integration", "hermes_vpe_middleware.py")
-_mw_spec = importlib.util.spec_from_file_location("hermes_vpe_middleware", _MW_PATH)
-_mw_mod = importlib.util.module_from_spec(_mw_spec)
-_mw_spec.loader.exec_module(_mw_mod)
-VPEMiddleware = _mw_mod.VPEMiddleware
+# Canonical middleware lives in the importable package (seal.integration).
+from seal.integration.hermes_vpe_middleware import VPEMiddleware
 
 
 @pytest.fixture
