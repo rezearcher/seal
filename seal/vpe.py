@@ -185,10 +185,11 @@ def _verify_bytes(data: bytes, signature: bytes, public_key: bytes) -> bool:
     """
     try:
         import nacl.bindings
+        import nacl.exceptions
         try:
             nacl.bindings.crypto_sign_open(signature + data, public_key)
             return True
-        except Exception:
+        except nacl.exceptions.BadSignatureError:
             return False
     except ImportError:
         from cryptography.exceptions import InvalidSignature

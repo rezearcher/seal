@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import tempfile
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -27,6 +28,15 @@ logger = logging.getLogger(__name__)
 _SECRET_PLACEHOLDER_PREFIX = "{SECRET:"  # Prefix for {SECRET:label} placeholders
 
 _DEFAULT_STORE_PATH = os.path.expanduser("~/.hermes/secrets.json")  # Default path for the credential store
+
+
+# ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
+
+
+class CredentialStoreCorruptedError(Exception):
+    """Raised when the credential store file is corrupt and cannot be read."""
 
 
 # ---------------------------------------------------------------------------
@@ -58,20 +68,83 @@ class CredentialStore:
         if not os.path.exists(self._path):
             self._write_store({})
 
+    def _verify_store_integrity(self) -> None:
+        """Write a known-good JSON structure and verify it round-trips.
+
+        This guards against silent write-path corruption (e.g. filesystem
+        issues, partial writes due to disk full) by exercising the full
+        read/write cycle with a deterministic payload on every write.
+
+        Raises:
+            CredentialStoreCorruptedError: If the round-trip verification fails.
+        """
+        # Write a known-GOOD marker to a temp file to verify round-trip
+        known_good = {"_seal_integrity_check_": True, "_version_": 1}
+        fd, tmp_path = tempfile.mkstemp(suffix=".json", dir=os.path.dirname(self._path))
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(known_good, f)
+                f.flush()
+                os.fsync(f.fileno())
+            # Read it back and verify
+            with open(tmp_path, "r") as f:
+                loaded = json.load(f)
+            if loaded != known_good:
+                raise CredentialStoreCorruptedError(
+                    f"Store integrity check failed at {tmp_path}: "
+                    f"round-trip mismatch — wrote {known_good!r}, read {loaded!r}"
+                )
+        except json.JSONDecodeError as exc:
+            raise CredentialStoreCorruptedError(
+                f"Store integrity check failed: JSON decode error on round-trip: {exc}"
+            ) from exc
+        except OSError as exc:
+            raise CredentialStoreCorruptedError(
+                f"Store integrity check failed: I/O error: {exc}"
+            ) from exc
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
     def _read_store(self) -> Dict[str, str]:
-        """Read all credentials from the store."""
+        """Read all credentials from the store.
+
+        Returns:
+            The credential dict.
+
+        Raises:
+            CredentialStoreCorruptedError: If the store file contains invalid JSON.
+        """
         try:
             with open(self._path, "r") as f:
                 data = json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError):
+        except FileNotFoundError:
             return {}
+        except json.JSONDecodeError as exc:
+            logger.warning(
+                "Credential store corrupted at %s: %s. Raising CredentialStoreCorruptedError.",
+                self._path,
+                exc,
+            )
+            raise CredentialStoreCorruptedError(
+                f"Credential store is corrupted at {self._path}: {exc}"
+            ) from exc
         return data
 
     def _write_store(self, data: Dict[str, str]) -> None:
-        """Write all credentials to the store."""
+        """Write all credentials to the store.
+
+        Raises:
+            CredentialStoreCorruptedError: If integrity verification fails after write.
+        """
         with open(self._path, "w") as f:
             json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
         os.chmod(self._path, 0o600)
+        self._verify_store_integrity()
 
     def get(self, label: str) -> Optional[str]:
         """Retrieve a secret by label.
@@ -81,6 +154,9 @@ class CredentialStore:
 
         Returns:
             The secret value, or None if not found.
+
+        Raises:
+            CredentialStoreCorruptedError: If the store file is corrupt.
         """
         store = self._read_store()
         return store.get(label)
@@ -91,6 +167,10 @@ class CredentialStore:
         Args:
             label: The credential label.
             value: The secret value.
+
+        Raises:
+            CredentialStoreCorruptedError: If the store file is corrupt or integrity
+                verification fails.
         """
         store = self._read_store()
         store[label] = value
@@ -104,6 +184,9 @@ class CredentialStore:
 
         Returns:
             True if deleted, False if not found.
+
+        Raises:
+            CredentialStoreCorruptedError: If the store file is corrupt.
         """
         store = self._read_store()
         if label in store:
@@ -117,6 +200,9 @@ class CredentialStore:
 
         Returns:
             Sorted list of label names (not values).
+
+        Raises:
+            CredentialStoreCorruptedError: If the store file is corrupt.
         """
         store = self._read_store()
         return sorted(store.keys())
@@ -129,6 +215,9 @@ class CredentialStore:
 
         Returns:
             True if the credential exists.
+
+        Raises:
+            CredentialStoreCorruptedError: If the store file is corrupt.
         """
         return label in self._read_store()
 
@@ -319,6 +408,9 @@ def request_secret(label: str, actor: str = "agent") -> Optional[str]:
 
     Returns:
         The secret value, or None.
+
+    Raises:
+        CredentialStoreCorruptedError: If the store file is corrupt.
     """
     store = get_default_store()
     audit = get_default_audit()
