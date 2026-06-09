@@ -408,7 +408,14 @@ class SecureEnclaveProvider(HsmProvider):
     supported_platforms = ["darwin"]
     sig_algorithm = SIG_ALG_ECDSA_P256
 
+    # Stable directory for persisting Secure Enclave key references
+    _keys_dir = os.path.expanduser("~/.seal/enclave-keys")
     _keys: dict[str, HsmKey] = {}
+
+    @classmethod
+    def _ensure_keys_dir(cls) -> str:
+        os.makedirs(cls._keys_dir, exist_ok=True)
+        return cls._keys_dir
 
     @classmethod
     def detect(cls) -> bool:
@@ -434,24 +441,27 @@ class SecureEnclaveProvider(HsmProvider):
 
         Uses ``security create-keypair`` with Secure Enclave flag.
         The private key never leaves the Enclave.
+
+        Key reference PEMs are persisted to ``~/.seal/enclave-keys/``
+        so the provider can find them for signing later.
         """
         key_id = f"enclave_{label}_{int(time.time())}"
 
-        with tempfile.TemporaryDirectory() as tmp:
-            priv_pem = os.path.join(tmp, "private.pem")
-            pub_pem = os.path.join(tmp, "public.pem")
+        keys_dir = self._ensure_keys_dir()
+        priv_pem = os.path.join(keys_dir, f"{key_id}.pem")
+        pub_pem = os.path.join(keys_dir, f"{key_id}.pub.pem")
 
-            subprocess.run(
-                [
-                    "security", "create-keypair",
-                    "-k", priv_pem,
-                    "-p", pub_pem,
-                    "-s",  # Secure Enclave
-                ],
-                check=True, capture_output=True, timeout=30,
-            )
+        subprocess.run(
+            [
+                "security", "create-keypair",
+                "-k", priv_pem,
+                "-p", pub_pem,
+                "-s",  # Secure Enclave
+            ],
+            check=True, capture_output=True, timeout=30,
+        )
 
-            public_key = _load_ec_pubkey_from_pem(pub_pem)
+        public_key = _load_ec_pubkey_from_pem(pub_pem)
 
         key = HsmKey(
             key_id=key_id,
@@ -468,13 +478,21 @@ class SecureEnclaveProvider(HsmProvider):
         """Sign with the Secure Enclave key using ``security sign``.
 
         The Security framework expects the data to sign, which it
-        hashes internally.
+        hashes internally. The key is resolved from the persisted
+        PEM reference file written during ``generate()``.
         """
-        # Find the key by importing the stored public key PEM into a
-        # temporary keychain.
         key = self._keys.get(key_id)
         if key is None:
             raise KeyError(f"Secure Enclave key not found: {key_id}")
+
+        # Resolve the persisted private key reference PEM
+        priv_pem = os.path.join(self._keys_dir, f"{key_id}.pem")
+        if not os.path.exists(priv_pem):
+            raise KeyError(
+                f"Secure Enclave key PEM not found at {priv_pem}; "
+                f"the key may have been generated on another machine "
+                f"or the ~/.seal/enclave-keys/ directory was removed."
+            )
 
         with tempfile.TemporaryDirectory() as tmp:
             data_file = os.path.join(tmp, "data.bin")
@@ -484,7 +502,7 @@ class SecureEnclaveProvider(HsmProvider):
             subprocess.run(
                 [
                     "security", "sign",
-                    "-k", key_id,  # keychain item label
+                    "-k", priv_pem,  # PEM with keychain persistent reference
                     "-o", sig_file,
                     data_file,
                 ],
