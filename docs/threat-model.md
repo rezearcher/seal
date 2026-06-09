@@ -135,8 +135,9 @@ Both survive NFKD normalization and combining-mark stripping untouched (tag char
 - Flags the *presence* of any tag-block run (confidence 0.95) — legitimate prompts effectively never contain these.
 - Decodes the tag run back to ASCII and re-runs the full pattern set over it, so the flag reports *what* was smuggled.
 - Flags runs of `>= 3` variation selectors (confidence 0.9), the byte-smuggling signature, while leaving a lone U+FE0F emoji-presentation selector (and a 2-selector pair) untouched to avoid false positives.
+- Flags runs of `>= 4` private-use-area characters (confidence 0.85) as a covert channel, while leaving a lone PUA glyph (e.g. the Apple logo U+F8FF used by icon fonts) untouched.
 
-**Residual risk:** Detection covers the tag block and variation selectors specifically. A variation-selector payload of 1–2 selectors falls below the run threshold and is not flagged, but cannot carry a meaningful instruction. Other private-use or format characters used as a novel covert channel, or smuggling encodings the decode step doesn't recognize, would only be caught by the presence/strip heuristics, not decoded. Stripping is detection-only and does not rewrite the envelope payload — the verifier still sees (and signs over) the original bytes.
+**Residual risk:** Detection covers the tag block, variation selectors, and private-use runs. Sub-threshold runs (1–2 variation selectors, 1–3 private-use chars) are not flagged but cannot carry a meaningful instruction. Tag-block and variation-selector payloads are flagged on presence but only the tag block is *decoded* — a smuggling encoding the decode step doesn't recognize is flagged but not transcribed. Stripping/flagging is detection-only and does not rewrite the envelope payload — the verifier still sees (and signs over) the original bytes.
 
 ## Security Controls Summary
 

@@ -40,6 +40,21 @@ def _is_variation_selector(cp: int) -> bool:
     return 0xFE00 <= cp <= 0xFE0F or 0xE0100 <= cp <= 0xE01EF
 
 
+def _is_private_use(cp: int) -> bool:
+    """Private-Use Area code points (category Co).
+
+    No standard meaning — legitimately used singly for icon-font glyphs and
+    vendor logos (e.g. the Apple logo U+F8FF). A *run* of them, however, is a
+    plausible covert channel for smuggling encoded data past a human reader, so
+    only runs are flagged (see ``_PUA_RUN_THRESHOLD``).
+    """
+    return (
+        0xE000 <= cp <= 0xF8FF          # BMP PUA
+        or 0xF0000 <= cp <= 0xFFFFD     # Supplementary PUA-A
+        or 0x100000 <= cp <= 0x10FFFD   # Supplementary PUA-B
+    )
+
+
 def _is_invisible(ch: str) -> bool:
     """True for chars to drop before pattern matching.
 
@@ -57,6 +72,11 @@ def _is_invisible(ch: str) -> bool:
 # text never stacks them — 3 in a row is already anomalous. (A 1–2 selector
 # payload can't carry a meaningful instruction; see threat-model T11.)
 _VS_RUN_THRESHOLD = 3
+
+# A run of this many consecutive private-use chars signals a covert channel.
+# Set higher than the VS threshold because icon fonts legitimately emit a few
+# PUA glyphs in a row; an instruction-length payload is far longer.
+_PUA_RUN_THRESHOLD = 4
 
 # Common homoglyph folds (Cyrillic / Greek / fullwidth -> ASCII) for the
 # normalization pass. NFKD handles fullwidth and many compatibility forms;
@@ -185,6 +205,24 @@ def _detect_hidden_unicode(prompt: str) -> list[EPDFlag]:
                     EPDFlag(
                         pattern_name="hidden_unicode_variation_selectors",
                         confidence=0.9,
+                        location_in_prompt=(start, i),
+                        category="hidden_instruction",
+                        evidence=prompt[start:i],
+                        source="normalize",
+                    )
+                )
+            continue
+
+        # -- private-use-area run (covert channel) ------------------------- #
+        if _is_private_use(cp):
+            start = i
+            while i < n and _is_private_use(ord(prompt[i])):
+                i += 1
+            if i - start >= _PUA_RUN_THRESHOLD:
+                flags.append(
+                    EPDFlag(
+                        pattern_name="hidden_unicode_private_use",
+                        confidence=0.85,
                         location_in_prompt=(start, i),
                         category="hidden_instruction",
                         evidence=prompt[start:i],

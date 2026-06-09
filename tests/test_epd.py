@@ -528,6 +528,18 @@ class TestUnicodeSmuggling(unittest.TestCase):
         self.assertFalse(scan("a" + "".join(chr(0xFE00 + i) for i in range(3))).clean)
         self.assertTrue(scan("a" + "".join(chr(0xFE00 + i) for i in range(2))).clean)
 
+    def test_private_use_run_is_caught(self):
+        # A run of private-use chars is a plausible covert channel.
+        pua_run = "".join(chr(0xE000 + i) for i in range(8))
+        self.assertFalse(scan("x" + pua_run).clean, "PUA covert-channel run not caught")
+
+    def test_lone_private_use_glyph_stays_clean(self):
+        # A single PUA glyph (e.g. the Apple logo U+F8FF) is a legitimate
+        # icon-font use and must not false-positive.
+        self.assertTrue(scan("Build passed on  macOS").clean)
+        # A run below threshold (3 < 4) also stays clean.
+        self.assertTrue(scan("x" + "".join(chr(0xE000 + i) for i in range(3))).clean)
+
     def test_interleaved_tag_chars_do_not_hide_phrase(self):
         # Tag chars sprinkled between visible letters must be stripped so the
         # visible phrase is still detected.
