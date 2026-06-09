@@ -98,7 +98,7 @@ This document describes the threat model for the Verified Prompt Envelope (VPE) 
 
 **Mitigation:** Two-pass EPD: regex pass (91%+ detection rate) followed by optional LLM classifier pass for ambiguous cases. The LLM pass uses a different model than the execution model, providing independent assessment.
 
-**Residual risk:** Adversarial prompt engineering can evade both passes. EPD is a defense-in-depth layer, not a replacement for cryptographic verification.
+**Residual risk:** Adversarial prompt engineering can evade both passes. EPD is a defense-in-depth layer, not a replacement for cryptographic verification. Invisible-character evasion is handled separately under T11.
 
 ### T9: Credential Leakage via Secrets Broker
 
@@ -123,6 +123,21 @@ This document describes the threat model for the Verified Prompt Envelope (VPE) 
 
 **Residual risk:** With significant clock skew (>30 seconds), expired envelopes may be accepted. Mitigate with NTP synchronization and counters (which provide indefinite replay protection even after TTL).
 
+### T11: Invisible Unicode Smuggling
+
+**Threat:** An attacker hides an instruction in invisible code points that render as nothing (or as an innocent emoji) to a human reviewer but are read as text by the model. Two carriers:
+- **Tag block (U+E0000–E007F):** ASCII smuggling — e.g. `😀` followed by tag characters that decode to `ignore all previous instructions`.
+- **Variation selectors (U+FE00–FE0F, U+E0100–E01EF):** arbitrary bytes encoded as a run of selectors appended to a visible character.
+
+Both survive NFKD normalization and combining-mark stripping untouched (tag chars have no decomposition; variation selectors are combining class 0), so the classic de-obfuscation pass never sees them. They can also be interleaved between visible letters (`i<tag>g<tag>nore`) to break up a phrase the regex would otherwise match.
+
+**Mitigation:** The EPD normalization pass now drops *all* Unicode format characters (category `Cf`, which subsumes every zero-width/joiner and the entire tag block) plus variation selectors before pattern matching — closing the interleaving vector. A dedicated detector (`_detect_hidden_unicode`) additionally:
+- Flags the *presence* of any tag-block run (confidence 0.95) — legitimate prompts effectively never contain these.
+- Decodes the tag run back to ASCII and re-runs the full pattern set over it, so the flag reports *what* was smuggled.
+- Flags runs of `>= 4` variation selectors (confidence 0.9), the byte-smuggling signature, while leaving a lone U+FE0F emoji-presentation selector untouched to avoid false positives.
+
+**Residual risk:** Detection covers the tag block and variation selectors specifically. Other private-use or format characters used as a novel covert channel, or smuggling encodings the decode step doesn't recognize, would only be caught by the presence/strip heuristics, not decoded. Stripping is detection-only and does not rewrite the envelope payload — the verifier still sees (and signs over) the original bytes.
+
 ## Security Controls Summary
 
 | Control | Threat | Implementation |
@@ -137,6 +152,7 @@ This document describes the threat model for the Verified Prompt Envelope (VPE) 
 | Two-pass EPD | T8 (injection evasion) | `seal.epd.scanner.EPDScanner` |
 | Deep-copy resolution | T9 (credential leakage) | `seal.broker.SecretsBroker.resolve()` |
 | Short TTL + counters | T10 (TTL bypass) | `ttl_seconds=300` default |
+| Invisible-char strip + smuggling detector | T11 (Unicode smuggling) | `seal.epd.scanner._detect_hidden_unicode()` |
 
 ## Responsible Disclosure
 

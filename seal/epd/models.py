@@ -19,7 +19,8 @@ class EPDFlag:
             ``"ignore_instructions"``, ``"role_switch"``, ``"delimiter"``,
             ``"hidden_instruction"``, ``"tool_hallucination"``).
         evidence: The exact substring that matched, for human review.
-        source: Which pass produced the flag — ``"regex"`` or ``"llm"``.
+        source: Which pass produced the flag — ``"regex"``, ``"llm"``, or
+            ``"normalize"`` (invisible-payload smuggling detection).
     """
 
     pattern_name: str
