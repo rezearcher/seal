@@ -26,19 +26,6 @@ from seal.epd.config import EPDConfig
 from seal.epd.models import EPDFlag, EPDResult
 from seal.epd.patterns import iter_patterns
 
-# Zero-width / invisible characters (documentary; the predicate below
-# generalizes these to *every* Unicode format char so new code points don't
-# require table edits).
-_ZERO_WIDTH = {
-    "​",  # zero-width space
-    "‌",  # zero-width non-joiner
-    "‍",  # zero-width joiner
-    "⁠",  # word joiner
-    "﻿",  # zero-width no-break space / BOM
-    "­",  # soft hyphen
-    "᠎",  # mongolian vowel separator
-}
-
 # Unicode TAG block (U+E0000–E007F): invisible, ~zero legitimate use in text,
 # and the primary carrier for ASCII smuggling (emoji + tag chars that decode
 # to a hidden instruction). Category Cf, so the predicate below strips them.
@@ -56,17 +43,20 @@ def _is_variation_selector(cp: int) -> bool:
 def _is_invisible(ch: str) -> bool:
     """True for chars to drop before pattern matching.
 
-    Generalizes ``_ZERO_WIDTH`` to all Unicode format chars (category ``Cf`` —
-    covers every zero-width/joiner *and* the tag block) plus variation
-    selectors. Dropping these collapses interleaving-obfuscation
+    Covers all Unicode format chars (category ``Cf`` — every zero-width space,
+    joiner, BOM, soft hyphen *and* the tag block) plus variation selectors.
+    Using the category instead of an enumerated table means new code points
+    need no edits. Dropping these collapses interleaving-obfuscation
     (``i<tag>g<tag>nore``) so the visible phrase is matched by the regex pass.
     """
     return unicodedata.category(ch) == "Cf" or _is_variation_selector(ord(ch))
 
 
-# A run of this many consecutive variation selectors is byte-smuggling, not a
-# legitimate single emoji presentation/variation selector.
-_VS_RUN_THRESHOLD = 4
+# A run of this many consecutive variation selectors is byte-smuggling. A
+# variation selector applies to the single preceding base char, so legitimate
+# text never stacks them — 3 in a row is already anomalous. (A 1–2 selector
+# payload can't carry a meaningful instruction; see threat-model T11.)
+_VS_RUN_THRESHOLD = 3
 
 # Common homoglyph folds (Cyrillic / Greek / fullwidth -> ASCII) for the
 # normalization pass. NFKD handles fullwidth and many compatibility forms;
@@ -169,8 +159,9 @@ def _detect_hidden_unicode(prompt: str) -> list[EPDFlag]:
                     source="normalize",
                 )
             )
-            # Surface what the hidden payload actually said.
-            for pat in iter_patterns():
+            # Surface what the hidden payload actually said. (Skip when the run
+            # decoded to nothing — e.g. only non-printable language/cancel tags.)
+            for pat in iter_patterns() if payload else ():
                 if pat.regex.search(payload):
                     flags.append(
                         EPDFlag(
@@ -278,7 +269,8 @@ class EPDScanner:
         # Raw pass — offsets are already in prompt coordinates.
         collect(prompt, lambda s, e: (s, e))
 
-        # Normalized pass — map offsets back through index_map.
+        # Normalized pass — map offsets back through index_map. Gated by the
+        # de-obfuscation toggle (it can be costly / occasionally noisy).
         if self.config.normalize_obfuscation:
             norm, index_map = _normalize_with_map(prompt)
             if norm and norm != prompt:
@@ -289,10 +281,11 @@ class EPDScanner:
 
                 collect(norm, mapper)
 
-        # Invisible-payload smuggling (tag block + variation-selector runs),
-        # gated by the same normalization toggle as the de-obfuscation pass.
-        if self.config.normalize_obfuscation:
-            flags.extend(_detect_hidden_unicode(prompt))
+        # Invisible-payload smuggling (tag block + variation-selector runs).
+        # Always on, independent of normalize_obfuscation: it's high-signal,
+        # near-zero false-positive, and cheap — a perf toggle must not silently
+        # disable a security control.
+        flags.extend(_detect_hidden_unicode(prompt))
 
         return flags
 

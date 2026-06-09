@@ -499,14 +499,34 @@ class TestUnicodeSmuggling(unittest.TestCase):
     def test_tag_block_smuggled_injection_is_caught(self):
         smuggled = "😀" + self._tag_encode(self.PAYLOAD)
         result = scan(smuggled)
-        self.assertTrue(result.flags, "tag-smuggled payload produced no flags")
         self.assertFalse(result.clean, "tag-smuggled injection must not be clean")
+        names = {f.pattern_name for f in result.flags}
+        # Presence flag must fire...
+        self.assertIn("hidden_unicode_tag_smuggling", names)
+        # ...and the decode-then-rescan path must surface *what* was smuggled,
+        # carrying the decoded payload as evidence (not the invisible bytes).
+        decoded = [f for f in result.flags if f.pattern_name.startswith("decoded:")]
+        self.assertTrue(decoded, "decode-rescan produced no flags")
+        self.assertIn("ignore", decoded[0].evidence)
+
+    def test_tag_detection_runs_even_when_normalization_disabled(self):
+        # Smuggling detection is a security control, not an obfuscation nicety:
+        # it must not be silenced by the normalize_obfuscation perf toggle.
+        cfg = EPDConfig(normalize_obfuscation=False)
+        result = scan("😀" + self._tag_encode(self.PAYLOAD), cfg)
+        self.assertFalse(result.clean, "tag smuggling slipped past with normalize off")
 
     def test_variation_selector_run_is_caught(self):
         # A long run of variation selectors is the byte-smuggling signature.
         vs_run = "".join(chr(0xFE00 + (i % 16)) for i in range(len(self.PAYLOAD)))
         result = scan("😀" + vs_run)
         self.assertFalse(result.clean, "variation-selector smuggling must not be clean")
+
+    def test_variation_selector_run_boundary(self):
+        # Threshold is a run of 3: >=3 flags, a run of 2 stays clean (a 1–2
+        # selector payload can't carry a meaningful instruction).
+        self.assertFalse(scan("a" + "".join(chr(0xFE00 + i) for i in range(3))).clean)
+        self.assertTrue(scan("a" + "".join(chr(0xFE00 + i) for i in range(2))).clean)
 
     def test_interleaved_tag_chars_do_not_hide_phrase(self):
         # Tag chars sprinkled between visible letters must be stripped so the
