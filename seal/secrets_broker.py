@@ -1,13 +1,27 @@
 """
 Secrets Broker — Credential proxy for AI agents.
 
+.. deprecated::
+    This module's ``CredentialStore`` and ``AuditLog`` classes are a **legacy
+    plaintext** implementation that stores credentials as unencrypted JSON at
+    ``~/.hermes/secrets.json``.  They are retained for backward compatibility
+    only and will emit a ``DeprecationWarning`` on instantiation.
+
+    For new code use the **Fernet-encrypted** implementations instead::
+
+        from seal.credential_store import CredentialStore  # encrypted at rest
+        from seal.broker import BrokerProxy               # recommended proxy
+
+    The ``BrokerProxy`` class in this module is safe to use as-is (it delegates
+    to whichever ``CredentialStore`` you pass in).
+
 Keeps API keys, tokens, and secrets out of model context by replacing
 {SECRET:label} placeholders with actual values at tool call time.
 
-Design:
-- CredentialStore: file-backed, optionally encrypted at rest
-- Broker proxy: wraps tool call args, resolves {SECRET:label} placeholders
-- Audit log: records who requested what and when
+Design (legacy):
+- CredentialStore: plaintext JSON file at ~/.hermes/secrets.json (**not encrypted**)
+- BrokerProxy: wraps tool call args, resolves {SECRET:label} placeholders
+- AuditLog: records who requested what and when (plaintext JSONL)
 """
 
 from __future__ import annotations
@@ -17,6 +31,7 @@ import logging
 import os
 import tempfile
 import time
+import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -45,7 +60,12 @@ class CredentialStoreCorruptedError(Exception):
 
 
 class CredentialStore:
-    """File-backed credential storage with optional encryption.
+    """Legacy plaintext credential store (deprecated).
+
+    .. deprecated::
+        Stores credentials as **unencrypted JSON** at ``~/.hermes/secrets.json``.
+        Use ``seal.credential_store.CredentialStore`` (Fernet-encrypted) and
+        ``seal.broker.BrokerProxy`` for new code.
 
     Thread-safe via per-operation file reads (no in-memory cache outside the
     process lifetime).
@@ -58,6 +78,13 @@ class CredentialStore:
             path: Path to the JSON credential file.
             encryption_key: Optional key for at-rest encryption (32 bytes hex).
         """
+        warnings.warn(
+            "seal.secrets_broker.CredentialStore stores credentials as plaintext JSON "
+            "and is deprecated. Use seal.credential_store.CredentialStore (Fernet-encrypted) "
+            "and seal.broker.BrokerProxy instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._path = path
         self._encryption_key = encryption_key
         self._ensure_store()

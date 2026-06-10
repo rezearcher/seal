@@ -81,6 +81,14 @@ except ImportError:
     _SEAL_AVAILABLE = False
     VPEResult = None  # type: ignore
 
+# Persistent nonce store for replay protection across process restarts
+try:
+    from seal.store import NonceStore
+    _NONCE_STORE_AVAILABLE = True
+except ImportError:
+    _NONCE_STORE_AVAILABLE = False
+    NonceStore = None  # type: ignore
+
 # Try to import Division audit (may not be available)
 try:
     from seal.integration.division_vpe_audit import DivisionVPEAudit
@@ -122,6 +130,7 @@ class DivisionVPESigner:
         key_dir: Optional[str] = None,
         agent_name: str = "hermes-default",
         mode: str = "bypass",
+        nonce_store: Optional["NonceStore"] = None,
     ):
         """Initialize the Division VPE signer.
 
@@ -129,6 +138,11 @@ class DivisionVPESigner:
             key_dir: Directory for VPE keypair. Defaults to ~/.hermes/vpe-keys/.
             agent_name: Name of this agent for signing metadata.
             mode: "sign" (always sign), "verify" (always verify), "bypass" (no-op).
+            nonce_store: Persistent NonceStore for replay protection across restarts.
+                Defaults to a NonceStore at ~/.seal/store.db when seal.store is
+                available. Pass an explicit instance (e.g. backed by a tmp_path DB)
+                to control the path in tests. Pass None to fall back to an
+                in-memory set (no cross-restart protection).
         """
         self._key_dir = key_dir or os.path.expanduser("~/.hermes/vpe-keys/")
         self._agent_name = agent_name
@@ -136,7 +150,19 @@ class DivisionVPESigner:
 
         self._private_key: Optional[bytes] = None
         self._public_key: Optional[bytes] = None
-        self._seen_nonces: set = set()
+
+        # Replay protection: prefer a persistent NonceStore so seen nonces
+        # survive process restarts. Falls back to an in-memory set when
+        # seal.store is unavailable.
+        if nonce_store is not None:
+            self._nonce_store: Optional["NonceStore"] = nonce_store
+            self._seen_nonces: Optional[set] = None
+        elif _NONCE_STORE_AVAILABLE:
+            self._nonce_store = NonceStore()
+            self._seen_nonces = None
+        else:
+            self._nonce_store = None
+            self._seen_nonces = set()
 
         # P6.4b: Optional Division memory audit trail
         self._audit: Optional[DivisionVPEAudit] = None
@@ -374,11 +400,26 @@ class DivisionVPESigner:
             try:
                 pk = value.get("public_key", "")
                 pub_key = bytes.fromhex(pk) if pk else self._public_key
+
+                # Check nonce replay before calling vpe_verify so we can use
+                # the persistent NonceStore (survives restarts) rather than
+                # the in-memory set that vpe_verify's seen_nonces uses.
+                nonce = envelope_data.get("nonce", "")
+                if nonce and self._nonce_store is not None:
+                    if not self._nonce_store.add(nonce):
+                        result = VPEResult(False, "nonce replay detected")
+                        self._record_audit(envelope_data, False, "verify", reason=result.reason)
+                        return result
+                    # Nonce recorded; skip replay check inside vpe_verify
+                    skip = ["expiry", "replay"]
+                else:
+                    skip = ["expiry"]
+
                 result = vpe_verify(
                     envelope_data,
                     public_key=pub_key,
                     seen_nonces=self._seen_nonces,
-                    skip_checks=["expiry"],  # memory has long TTL
+                    skip_checks=skip,
                 )
                 # P6.4b: Record verification in audit trail
                 self._record_audit(envelope_data, result.valid, "verify", reason=result.reason)

@@ -1,6 +1,6 @@
 # Seal — Verified Prompt Envelope Protocol & AI Agent Security
 
-> **Status:** Phases 1–9 core capabilities **implemented and tested** — VPE Core (Ed25519 + HMAC + multi-sig + hierarchical cert chains + hardware signing), EPD Scanner (regex + LLM + Unicode-smuggling defense), Secrets Broker, persistent stores, full key lifecycle + rotation daemon, Hermes/Division integration, rollback, adversarial fuzzer, and benchmarks. **517 tests (516 pass, 1 skip).**
+> **Status:** Phases 1–9 core capabilities **implemented and tested** — VPE Core (Ed25519 + HMAC + multi-sig + hierarchical cert chains + hardware signing), EPD Scanner (regex + LLM + Unicode-smuggling defense), Secrets Broker, persistent stores, full key lifecycle + rotation daemon, Hermes/Division integration, rollback, adversarial fuzzer, and benchmarks. **569 tests (569 pass, 1 skip).**
 > **Remaining:** external adoption only — P8 (cross-language ports, OWASP/MCP standardization) and P10 (production-bake). See per-phase status tags below.
 > **Board:** seal
 > **Assignee profile:** default (Claude Code via Max plan)
@@ -125,7 +125,7 @@ A verified prompt is a JSON wrapper with Ed25519 signature:
 <a id="whats-built-current-state"></a>
 ## What's Built (current state)
 
-> Authoritative inventory of modules that physically exist, with the test file that exercises each. **517 tests collected; 516 pass, 1 skip.** Keep this table current when modules land — it is the anti-confusion anchor for the roadmap below.
+> Authoritative inventory of modules that physically exist, with the test file that exercises each. **569 tests collected; 569 pass, 1 skip.** Keep this table current when modules land — it is the anti-confusion anchor for the roadmap below.
 
 ### VPE Core — signing & verification (Phase 1, plus 5.4 / 9.1 / 9.3 / 9.4)
 | Module | LOC | Provides | Tests |
@@ -181,6 +181,15 @@ A verified prompt is a JSON wrapper with Ed25519 signature:
 
 ### CLI surface (`seal …`)
 `genkey` · `sign` · `verify` · `secrets {add,get,list,delete}` · `audit` · `key {rotate,revoke,disable,list,daemon}` · `rollback` · `hardware` · `fuzz` · `status`
+
+---
+
+## Security Notes / Known Limitations
+
+- **Private keys unencrypted at rest:** `seal/key_manager.py` stores private keys raw (unencrypted) in the SQLite registry at `~/.seal/keys.db`. The module docstring acknowledges this: "encryption-at-rest is future work." Protect the file with restrictive filesystem permissions (`chmod 600`) until encryption-at-rest lands.
+- **TTL enforcement requires `iat`:** In both `seal/core.py` and `seal/vpe.py`, TTL expiry is only enforced when the `iat`/`issued_at` field is present in the envelope. When `iat` is absent (backward-compat envelopes), TTL is silently skipped. Envelopes produced by `vpe_sign` always include `iat`.
+- **Two credential store paths — only one is encrypted:** `seal/credential_store.py` (`seal.credential_store.CredentialStore`) is Fernet-encrypted at rest and is the current recommended implementation. `seal/secrets_broker.py` contains a legacy `CredentialStore` that writes credentials as **plaintext JSON** to `~/.hermes/secrets.json`; it is deprecated and emits a `DeprecationWarning` on import. Use `seal.broker` and `seal.credential_store` for all new integrations.
+- **Cross-language ports not yet available (P8.5):** TypeScript, Go, and Rust ports are planned but not published. See the Phase 8 section below.
 
 ---
 
@@ -281,7 +290,7 @@ VPE bypass rate         0% (no cryptographic bypasses)
 | P8.2 | Draft MCP spec extension | Formal MCP spec extension proposal. Define: `vpe` field in MCP messages, key exchange mechanism, verification error codes. Submit as PR to MCP spec repo or IETF draft. |
 | P8.3 | Open source release | Clean GitHub repo: README, LICENSE, CONTRIBUTING, issue templates, CI pipeline (GitHub Actions for tests + benchmarks). PyPI package: `pip install seal-vpe`. |
 | P8.4 | Documentation site | Hosted docs (GitHub Pages or similar): protocol spec, API reference, integration guide, CLI reference, threat model. Quickstart: "Add VPE to your agent in 5 minutes." |
-| P8.5 | Reference implementations | Port VPE to: TypeScript/Node.js, Go, Rust. Each must pass the same test vector suite (cross-language verification). Python implementation remains the canonical spec. |
+| P8.5 | Reference implementations (**⬜ NOT YET STARTED** — no packages published) | Port VPE to: TypeScript/Node.js, Go, Rust. Each must pass the same test vector suite (cross-language verification). Python implementation remains the canonical spec. `npm install seal-vpe`, `go get github.com/seal/vpe-go/vpe`, and `cargo add vpe-rust` will all 404 until this ships. |
 | P8.6 | Community engagement | Blog post: "Why your AI agent needs cryptographic prompt verification." Conference talk CFP submissions (AI security conferences, OWASP events, Rust/NYC, etc.). Discussion with Hermes upstream for native support. |
 
 ### Standards Timeline

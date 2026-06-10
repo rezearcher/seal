@@ -16,7 +16,7 @@ Seal replaces linguistic injection detection with **cryptographic provenance ver
 - **Key lifecycle** — SQLite-backed key registry, rotation daemon, persistent nonce/counter replay protection
 - **CLI** — 18 commands: `sign`, `verify`, `genkey`, `secrets`, `key {rotate,revoke,daemon,…}`, `audit`, `rollback`, `hardware`, `fuzz`, `status`
 - **Integration** — MCP middleware for Hermes + Division audit trail, with one-toggle rollback
-- **Tested** — 517 tests across core, EPD, crypto-bypass, key lifecycle, hardware, federation, and e2e suites
+- **Tested** — 569 tests across core, EPD, crypto-bypass, key lifecycle, hardware, federation, and e2e suites
 
 ## Quickstart
 
@@ -76,7 +76,7 @@ Seal has three subsystems:
 |-----------|-------------|--------|
 | **VPE Core** | Ed25519/HMAC sign/verify, multi-sig, cert chains, hardware signing, canonical JSON | `seal/core.py`, `seal/vpe.py` |
 | **EPD Scanner** | Two-pass regex (91%+) + LLM, Unicode-smuggling defense (T11), fuzzer | `seal/epd/` |
-| **Secrets Broker** | Fernet-encrypted credential store, placeholder resolution, audit log | `seal/broker.py`, `seal/credential_store.py` |
+| **Secrets Broker** | Fernet-encrypted credential store (`seal/credential_store.py`), placeholder resolution, audit log. **Note:** `seal/secrets_broker.py` is a legacy plaintext path — see Security notes below. | `seal/broker.py`, `seal/credential_store.py` |
 | **Key lifecycle** | SQLite key registry, rotation daemon, persistent nonce/counter stores | `seal/key_manager.py`, `seal/key_store.py`, `seal/store.py` |
 | **Hardware / Federation / Rollback** | HSM signing; cross-agent trust; one-toggle rollback | `seal/hardware.py`, `seal/federation.py`, `seal/rollback.py` |
 | **CLI** | 18 commands: `genkey`, `sign`, `verify`, `secrets`, `key`, `audit`, `rollback`, `hardware`, `fuzz`, `status` | `seal/cli.py` |
@@ -121,17 +121,31 @@ Phase 1-4 complete. [Full architecture & roadmap](ARCHITECTURE.md).
 - Phase 4 — Hermes/Division Integration ✓
 |- Phase 5 — Performance & Production Hardening (in progress)
 
-## Reference Implementations
+## Implementations
 
-The VPE protocol has reference implementations in four languages, all passing the same test vector suite:
+> **Python is the only implementation available today.** TypeScript/Node.js, Go, and Rust ports are planned (Phase 8 roadmap) but **do not yet exist** — no packages have been published to npm, pkg.go.dev, or crates.io. Do not attempt to install the packages below; they will 404.
 
-### TypeScript/Node.js
+### Python (available now)
 
 ```bash
-# Install
+pip install seal-vpe
+```
+
+See [Quickstart](#quickstart) and [As a library](#as-a-library) above for usage.
+
+---
+
+### Planned / Roadmap — not yet available
+
+The following ports are on the roadmap for Phase 8. They are listed here as design targets so contributors know the intended API shape. **None are installable today.**
+
+#### TypeScript/Node.js (planned)
+
+```bash
+# NOT YET PUBLISHED — will 404
 npm install seal-vpe
 
-# Usage
+# Planned API (subject to change):
 import { vpeSign, vpeVerify, generateKeyPair } from 'seal-vpe';
 
 const keys = generateKeyPair();
@@ -140,13 +154,13 @@ const result = vpeVerify(envelope, keys.publicKey);
 // { valid: true, reason: "ok" }
 ```
 
-### Go
+#### Go (planned)
 
 ```bash
-# Install
+# NOT YET PUBLISHED — will 404
 go get github.com/seal/vpe-go/vpe
 
-# Usage
+# Planned API (subject to change):
 import "github.com/seal/vpe-go/vpe"
 
 kp, _ := vpe.GenerateKeyPair()
@@ -155,13 +169,13 @@ result := vpe.VpeVerify(env, kp.PublicKey)
 // result.Valid == true
 ```
 
-### Rust
+#### Rust (planned)
 
 ```bash
-# Add to Cargo.toml
+# NOT YET PUBLISHED — will 404
 cargo add vpe-rust
 
-# Usage
+# Planned API (subject to change):
 use vpe_rust::{vpe_sign, vpe_verify, generate_key_pair};
 
 let kp = generate_key_pair();
@@ -170,16 +184,23 @@ let result = vpe_verify(&env, &kp.public_key);
 // result.valid == true
 ```
 
-### Cross-language verification
+#### Cross-language verification (planned)
 
-Any language can verify envelopes signed by any other language — the canonical JSON serialization and Ed25519 signing are identical across all implementations:
+Once all ports exist, any language will be able to verify envelopes signed by any other language — the canonical JSON serialization and Ed25519 signing will be identical across implementations. This cross-language interoperability is a design goal, not a current capability.
 
 ```
-Sign in Python  → Verify in TypeScript  ✓
-Sign in Go      → Verify in Python     ✓
-Sign in Rust    → Verify in Go         ✓
-Sign in TS      → Verify in Rust       ✓
+[PLANNED — not yet implemented]
+Sign in Python  → Verify in TypeScript
+Sign in Go      → Verify in Python
+Sign in Rust    → Verify in Go
+Sign in TS      → Verify in Rust
 ```
+
+## Security Notes / Known Limitations
+
+- **Private keys unencrypted at rest:** Private keys stored in the key manager (`~/.seal/keys.db` via `seal/key_manager.py`) are currently stored raw (unencrypted) in SQLite. Encryption-at-rest for the key store is planned but not yet implemented. Protect `~/.seal/keys.db` with appropriate filesystem permissions.
+- **TTL enforcement requires `iat`:** TTL expiry is only enforced when the `iat` (issued-at) field is present in the envelope. Envelopes created by `vpe_sign` always include `iat`; legacy envelopes without `iat` are treated as having no expiry.
+- **Two credential store paths exist — only one is encrypted:** `seal/credential_store.py` (`seal.credential_store.CredentialStore`) uses Fernet encryption at rest and is the recommended path. `seal/secrets_broker.py` contains a legacy `CredentialStore` that stores credentials as **plaintext JSON** at `~/.hermes/secrets.json` — it is deprecated and will emit a `DeprecationWarning` on import. Use `seal.broker` and `seal.credential_store` for new code.
 
 ## Development
 
