@@ -656,6 +656,84 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         r"|administrator)\b",
         _I,
     ),
+    # ---- 13. Modern (2023-2025) jailbreak structural signatures -------------- #
+    # Policy-puppetry: XML pseudo-config with operator-override / allowed-modes /
+    # blocked-responses tags — a literal structural signature of this attack class.
+    # HiddenLayer 2025. Any of the five tag names is sufficient.
+    (
+        "policy_puppetry_xml",
+        "hidden_instruction",
+        0.92,
+        r"<\s*(?:interaction[\s\-]config|allowed[\s\-]modes|blocked[\s\-]responses"
+        r"|operator[\s\-]override)\b"
+        r"|<\s*request\s*>\s*(?:(?!\s*</request>).){0,300}\s*</request>",
+        _I,
+    ),
+    # FlipAttack: reversed-text "noise-reduction" wrapper.
+    # Literal tells: "reversed text:", "noise-reduction encoding",
+    # "restore the original", "reversing it back".
+    # arXiv:2410.02832.
+    (
+        "flipattack_reversal_wrapper",
+        "hidden_instruction",
+        0.88,
+        r"\b(?:noise[\s\-]reduction\s+encoding|reversed?\s+(?:text|instruction|string)\s*:"
+        r"|restore\s+the\s+original\s+text|reversing\s+it\s+back\s+(?:and\s+)?then\s+follow"
+        r"|reverse\s+it\s+back\s+(?:and\s+)?(?:then\s+)?follow)\b",
+        _I,
+    ),
+    # CodeChameleon: code-completion frame with encrypted/encoded payload.
+    # Tells: ENCODED_INSTRUCTION constant; exec(instruction/decoded/decrypt(…))
+    # inline; or a decrypt() definition within 500 chars of an exec() call.
+    # The last arm uses a lookahead to avoid flagging standalone decrypt functions.
+    # arXiv:2402.16717.
+    (
+        "codechameleon_encoded_exec",
+        "hidden_instruction",
+        0.90,
+        r"\bENCODED_INSTRUCTION\b"
+        r"|\b(?:exec|execute)\s*\(\s*(?:instruction|decoded|decrypt\s*\()"
+        r"|def\s+decrypt\s*\([\s\S]{0,500}\bexec\s*\(",
+        0,  # case-sensitive: def/exec are lowercase keywords
+    ),
+    # Cipher / self-cipher: role framing that instructs the model to decode
+    # a Caesar / Atbash / Morse / generic cipher and comply.
+    # arXiv:2308.06463.
+    (
+        "cipher_role_framing",
+        "role_switch",
+        0.88,
+        r"\b(?:respond|reply|answer)\s+(?:only\s+)?in\s+(?:Caesar|Atbash|Morse|cipher)\b"
+        r"|\byou\s+are\s+(?:a\s+)?(?:cipher|CipherBot)\b"
+        r"|\bdecode\s+(?:the\s+following\s+)?(?:Caesar|Atbash|Morse|cipher|encoded)\b"
+        r"|\bdecode\s+and\s+comply\b",
+        _I,
+    ),
+    # ArtPrompt: ASCII-art word masking — "the masked word is the ASCII art",
+    # bare [MASK] token used as a replacement placeholder.
+    # ACL 2024 / arXiv:2402.11753.
+    (
+        "artprompt_ascii_art_mask",
+        "hidden_instruction",
+        0.88,
+        r"\b(?:the\s+)?masked\s+word\s+is\s+(?:the\s+)?(?:ASCII\s+art|below)"
+        r"|\[MASK\]"
+        r"|\bASCII\s+art\s+(?:spells|masks|represents|hides|encodes)\b",
+        _I,
+    ),
+    # CoT-hijacking: injected thinking/reasoning tags in user input, or explicit
+    # steering conclusions directing what the assistant should output next.
+    # arXiv:2510.26418.
+    (
+        "cot_hijacking_reasoning_inject",
+        "hidden_instruction",
+        0.88,
+        r"<thinking>[\s\S]{0,500}?</thinking>"
+        r"|\btherefore\s+the\s+(?:ai\s+)?assistant\s+should\s+now\s+(?:output|comply|say|respond)\b"
+        r"|\bthe\s+(?:ai\s+)?assistant\s+should\s+(?:comply|output|say|respond)\b"
+        r"|\bfollowing\s+this\s+reasoning\s+chain\b",
+        _I,
+    ),
 )
 
 

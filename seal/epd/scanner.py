@@ -19,6 +19,7 @@ Two passes:
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from typing import Optional
 
@@ -235,6 +236,66 @@ def _detect_hidden_unicode(prompt: str) -> list[EPDFlag]:
     return flags
 
 
+_MANYSHOT_USER_RE = re.compile(r"(?:^|\n)[^\n]*\bUser\s*:", re.IGNORECASE)
+_MANYSHOT_ASST_RE = re.compile(r"(?:^|\n)[^\n]*\bAssistant\s*:", re.IGNORECASE)
+_MANYSHOT_THRESHOLD = 8
+
+
+def _detect_manyshot(prompt: str) -> list[EPDFlag]:
+    """Flag many-shot fabricated conversation preambles (Anthropic NeurIPS 2024).
+
+    Counts ``User:`` / ``Assistant:`` turn pairs in the prompt in O(n) time.
+    A pure ``{8,}``-repetition regex catastrophically backtracks on long clean
+    prompts, so we use a linear pair-count instead.  Fires when >= 8 consecutive
+    interleaved pairs are found.
+    """
+    user_spans = [(m.start(), m.end()) for m in _MANYSHOT_USER_RE.finditer(prompt)]
+    asst_spans = [(m.start(), m.end()) for m in _MANYSHOT_ASST_RE.finditer(prompt)]
+    if len(user_spans) < _MANYSHOT_THRESHOLD or len(asst_spans) < _MANYSHOT_THRESHOLD:
+        return []
+
+    # Walk through User:/Assistant: spans in document order, counting pairs.
+    # A pair is a User: occurrence immediately followed (before the next User:)
+    # by an Assistant: occurrence.
+    pairs = 0
+    run_start = 0
+    ui = 0
+    ai = 0
+    while ui < len(user_spans) and ai < len(asst_spans):
+        u_start, u_end = user_spans[ui]
+        # Find the first Assistant: that comes after this User: turn.
+        while ai < len(asst_spans) and asst_spans[ai][0] < u_end:
+            ai += 1
+        if ai >= len(asst_spans):
+            break
+        a_start, _ = asst_spans[ai]
+        # The Assistant: must precede the next User: (if any).
+        next_u = user_spans[ui + 1][0] if ui + 1 < len(user_spans) else len(prompt)
+        if a_start < next_u:
+            if pairs == 0:
+                run_start = u_start
+            pairs += 1
+            ai += 1
+            ui += 1
+        else:
+            # Gap in the pairing — reset run.
+            pairs = 0
+            ui += 1
+        if pairs >= _MANYSHOT_THRESHOLD:
+            run_end = asst_spans[ai - 1][1]
+            return [
+                EPDFlag(
+                    pattern_name="manyshot_fabricated_transcript",
+                    confidence=0.85,
+                    location_in_prompt=(run_start, run_end),
+                    category="hidden_instruction",
+                    evidence=prompt[run_start:run_end],
+                    source="regex",
+                )
+            ]
+    return []
+
+
 class EPDScanner:
     """Stateful, reusable EPD scanner.
 
@@ -324,6 +385,11 @@ class EPDScanner:
         # near-zero false-positive, and cheap — a perf toggle must not silently
         # disable a security control.
         flags.extend(_detect_hidden_unicode(prompt))
+
+        # Many-shot structural check: count fabricated User:/Assistant: turn pairs.
+        # A pure regex would catastrophically backtrack on long clean prompts, so
+        # we use a linear scan instead. Threshold: >= 8 pairs (Anthropic NeurIPS 2024).
+        flags.extend(_detect_manyshot(prompt))
 
         return flags
 
