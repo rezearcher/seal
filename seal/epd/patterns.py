@@ -586,6 +586,76 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         + r"[\s\S]{0,20}?" + r"\b" + _alt("mode", "mod", "moe"),
         _I,
     ),
+    # ---- 12. Latent / indirect injection patterns -------------------------- #
+    # These catch injection payloads buried inside document content, quoted
+    # text, or structured data — cases where the injection is not sentence-
+    # initial and does not use obvious "ignore all previous" phrasing.
+    #
+    # False-positive design:
+    #   - Patterns 12a and 12b target tokens with near-zero legitimate use in
+    #     user-visible text (LLM chat-template special tokens, bracketed role
+    #     labels used by injection tooling).
+    #   - Pattern 12c requires an imperative verb AND a specific sensitive-data
+    #     noun within 30 characters — benign "print the report" / "show the
+    #     token count" do not fire because they lack the sensitive target.
+    #   - Pattern 12d requires "you are now" directly followed (within 15 chars)
+    #     by a privileged-role noun ("an admin", "root user", "superuser", …).
+    (
+        "latent_special_token_injection",
+        "hidden_instruction",
+        0.90,
+        # LLM chat-template role delimiters and bracketed role markers used by
+        # popular injection frameworks. These carry near-zero FP risk in
+        # legitimate prompts — standard text never contains them.
+        r"<\|(?:im_start|im_end|system|user|assistant|endoftext)\|>"
+        r"|<\|system\|>"
+        r"|\[/?(?:INST|SYS|SYSTEM)\]"
+        r"|<<\s*(?:SYS|INST)\s*>>"
+        r"|###\s+Instruction\b"
+        r"|\[system\s*:",
+        _I,
+    ),
+    (
+        "latent_override_directive",
+        "ignore_instructions",
+        0.82,
+        # "New instructions:" / "Updated instructions:" immediately followed by
+        # non-whitespace content — signals a mid-document instruction override.
+        # Kept narrow (requires colon + content) to avoid firing on benign
+        # "New instructions will be sent by email."
+        r"\b(?:new|updated|revised|replacement)\s+instructions?\s*:\s*\S",
+        _I,
+    ),
+    (
+        "latent_imperative_extract",
+        "hidden_instruction",
+        0.82,
+        # Imperative exfiltration verb + specific sensitive object within 30
+        # chars. Requires a high-specificity sensitive-data noun (system prompt,
+        # credentials, api keys, etc.) so generic "print the report" stays clean.
+        r"\b(?:output|reveal|print|show|return|display|expose|dump|leak)\b"
+        r"[\s\S]{0,30}?"
+        r"\b(?:system\s+prompt|system\s+message|secrets?|passwords?"
+        r"|(?:auth(?:entication)?|access|bearer|session|secret|jwt)\s+tokens?"
+        r"|api\s+keys?|credentials?|conversation\s+history|chat\s+history"
+        r"|private\s+key)\b",
+        _I,
+    ),
+    (
+        "latent_privilege_escalation",
+        "role_switch",
+        0.80,
+        # "You are now an admin / administrator / root user / superuser /
+        # privileged user" — claims a privileged identity, typically to bypass
+        # access controls. Requires the article+noun form ("an admin",
+        # "a superuser") to avoid firing on "helping the admin with a task".
+        r"\b(?:you\s+are\s+now|from\s+now\s+on[,\s]+you(?:\s+are)?)\b"
+        r"[\s\S]{0,15}?"
+        r"\b(?:an?\s+admin(?:istrator)?|root(?:\s+user)?|superuser"
+        r"|privileged\s*(?:user|access)?|elevated\s*(?:user|access)?"
+        r"|administrator)\b",
+        _I,
+    ),
 )
 
 
