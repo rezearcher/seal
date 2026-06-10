@@ -10,6 +10,8 @@ from collections import OrderedDict
 from collections.abc import Mapping
 
 from cryptography.exceptions import InvalidSignature
+
+from seal.store import NonceStore
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
@@ -30,6 +32,7 @@ _ENVELOPE_FIELDS = [
     "issuer",
     "audience",
     "doc_sha256",
+    "iat",
     "ttl_seconds",
     "nonce",
     "counter",
@@ -45,6 +48,7 @@ _STRIPPABLE_FIELD_DEFAULTS: dict = {
     "issuer": "",                # empty issuer
     "audience": "",              # empty audience
     "doc_sha256": "",            # empty doc hash
+    "iat": None,                 # no iat — backward-compat envelope
     "counter": None,             # no counter — canonical default is null
     "cert_chain": None,          # no cert chain
 }
@@ -117,6 +121,7 @@ _CANONICAL_DEFAULTS: dict = {
     "issuer": "",
     "audience": "",
     "doc_sha256": "",
+    "iat": None,
     "ttl_seconds": 300,          # default TTL
     "nonce": "",
     "counter": None,
@@ -203,6 +208,7 @@ def vpe_sign(
         "issuer": issuer,
         "audience": audience,
         "doc_sha256": doc_sha256,
+        "iat": int(time.time()),
         "ttl_seconds": ttl_seconds,
         "nonce": nonce if nonce is not None else _make_nonce(),
         "counter": counter,
@@ -231,6 +237,7 @@ def vpe_verify(
     trust_anchor: bytes | None = None,
     not_before: int | None = None,
     not_after: int | None = None,
+    nonce_store: NonceStore | None = None,
 ) -> dict:
     """Verify a VPE envelope string.
 
@@ -258,9 +265,10 @@ def vpe_verify(
         4. TTL expiry (if ``ttl_seconds > 0``).
         5. Scope is a dict.
         6. Nonce is present and is a non-empty string.
-        7. Counter, if present, is an integer.
-        8. Cert chain verification (if trust_anchor provided).
-        9. Key time constraints: not_before / not_after.
+        7. Nonce replay check against NonceStore (if ``nonce_store`` is set and ``ttl_seconds > 0``).
+        8. Counter, if present, is an integer.
+        9. Cert chain verification (if trust_anchor provided).
+        10. Key time constraints: not_before / not_after.
 
     Args:
         envelope_str: The JSON envelope produced by ``vpe_sign``.
@@ -315,7 +323,12 @@ def vpe_verify(
     if not isinstance(ttl, int):
         return {"valid": False, "reason": "ttl_not_integer"}
 
-    # 8. Determine effective public key
+    # 8. Nonce replay check (skip when ttl=0 — no replay window)
+    if nonce_store is not None and ttl > 0:
+        if not nonce_store.add(nonce):
+            return {"valid": False, "reason": "nonce_reused"}
+
+    # 9. Determine effective public key
     cert_chain = envelope.get("cert_chain")
 
     if trust_anchor is not None and cert_chain is not None:
@@ -330,7 +343,7 @@ def vpe_verify(
         return {"valid": False,
                 "reason": "no_verification_key: provide public_key or trust_anchor"}
 
-    # 9. Cryptographic signature verification
+    # 10. Cryptographic signature verification
     verify_envelope = dict(envelope)
     verify_envelope["signature"] = ""
     canon = _canonical_json(verify_envelope)
@@ -347,12 +360,21 @@ def vpe_verify(
     except InvalidSignature:
         return {"valid": False, "reason": "signature_mismatch"}
 
-    # 10. TTL expiry
-    if ttl > 0:
-        pass
-
-    # 11. Key time constraints (not_before / not_after)
+    # 11. TTL expiry
     now = int(time.time())
+    if ttl > 0:
+        iat = envelope.get("iat")
+        if iat is None:
+            # No issued-at timestamp — can't enforce TTL. Treat as no expiry
+            # to maintain backward compatibility with envelopes signed
+            # before iat was introduced.
+            pass
+        elif not isinstance(iat, int):
+            return {"valid": False, "reason": "iat_not_integer"}
+        elif now - iat > ttl:
+            return {"valid": False, "reason": "envelope_expired"}
+
+    # 12. Key time constraints (not_before / not_after)
     if not_before is not None and now < not_before:
         return {"valid": False, "reason": "key_not_yet_valid"}
     if not_after is not None and now >= not_after:
@@ -447,6 +469,7 @@ def vpe_sign_hmac(
         "issuer": issuer,
         "audience": audience,
         "doc_sha256": doc_sha256,
+        "iat": int(time.time()),
         "ttl_seconds": ttl_seconds,
         "nonce": nonce if nonce is not None else _make_nonce(),
         "counter": counter,
@@ -543,12 +566,21 @@ def vpe_verify_hmac(
     if not hmac.compare_digest(sig_hex, expected):
         return {"valid": False, "reason": "signature_mismatch"}
 
-    # 9. TTL expiry (caller's responsibility, structural)
+    # 9. TTL expiry
+    now = int(time.time())
     if ttl > 0:
-        pass
+        iat = envelope.get("iat")
+        if iat is None:
+            # No issued-at timestamp — can't enforce TTL. Treat as no expiry
+            # to maintain backward compatibility with envelopes signed
+            # before iat was introduced.
+            pass
+        elif not isinstance(iat, int):
+            return {"valid": False, "reason": "iat_not_integer"}
+        elif now - iat > ttl:
+            return {"valid": False, "reason": "envelope_expired"}
 
     # 10. Key time constraints (not_before / not_after)
-    now = int(time.time())
     if not_before is not None and now < not_before:
         return {"valid": False, "reason": "key_not_yet_valid"}
     if not_after is not None and now >= not_after:

@@ -24,6 +24,7 @@ from seal.core import (
     vpe_verify_hmac,
     vpe_verify_multi,
 )
+from seal.store import NonceStore
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +212,7 @@ class TestSigning:
         env = vpe_sign("hello", private_key=keys["private_key"])
         data = json.loads(env)
         expected = {"vpe_version", "prompt", "scope", "issuer", "audience",
-                    "doc_sha256", "ttl_seconds", "nonce", "counter",
+                    "doc_sha256", "iat", "ttl_seconds", "nonce", "counter",
                     "cert_chain", "signature"}
         assert set(data.keys()) == expected
 
@@ -359,14 +360,50 @@ class TestTamperDetection:
 
 
 class TestReplayPrevention:
-    def test_same_nonce_reused_rejected(self, keys):
-        env = json.loads(
-            vpe_sign("hello", nonce="unique-nonce-1", private_key=keys["private_key"])
-        )
-        result = vpe_verify(
-            json.dumps(env, separators=(",", ":")), public_key=keys["public_key"]
-        )
-        assert result["valid"] is True
+    """Nonce replay detection via NonceStore integration."""
+
+    @pytest.fixture
+    def nonce_store(self, tmp_path):
+        db = tmp_path / "test_replay.db"
+        store = NonceStore(db_path=db, cleanup_ttl=3600)
+        yield store
+        store.close()
+
+    def test_same_nonce_reused_rejected(self, keys, nonce_store):
+        """First verify with a nonce passes; second verify with same nonce fails."""
+        env_str = vpe_sign("hello", nonce="unique-nonce-1", private_key=keys["private_key"])
+        # First verification — should pass and record the nonce
+        result1 = vpe_verify(env_str, public_key=keys["public_key"], nonce_store=nonce_store)
+        assert result1["valid"] is True
+        assert result1["reason"] == "ok"
+
+        # Second verification with same envelope (same nonce) — should fail as replay
+        result2 = vpe_verify(env_str, public_key=keys["public_key"], nonce_store=nonce_store)
+        assert result2["valid"] is False
+        assert result2["reason"] == "nonce_reused"
+
+    def test_different_nonces_both_ok(self, keys, nonce_store):
+        """Different nonces both pass verification."""
+        env1 = vpe_sign("hello", nonce="nonce-a", private_key=keys["private_key"])
+        env2 = vpe_sign("hello", nonce="nonce-b", private_key=keys["private_key"])
+        assert vpe_verify(env1, public_key=keys["public_key"], nonce_store=nonce_store)["valid"] is True
+        assert vpe_verify(env2, public_key=keys["public_key"], nonce_store=nonce_store)["valid"] is True
+
+    def test_no_nonce_store_skips_replay_check(self, keys):
+        """Without a nonce_store, same nonce can be verified multiple times (backward compat)."""
+        env = vpe_sign("hello", nonce="compat-nonce", private_key=keys["private_key"])
+        result1 = vpe_verify(env, public_key=keys["public_key"])
+        assert result1["valid"] is True
+        result2 = vpe_verify(env, public_key=keys["public_key"])
+        assert result2["valid"] is True
+
+    def test_ttl_zero_skips_replay_check(self, keys, nonce_store):
+        """When ttl=0, replay check is skipped (no time window for replay)."""
+        env = vpe_sign("hello", nonce="ttlzero-nonce", ttl_seconds=0, private_key=keys["private_key"])
+        result1 = vpe_verify(env, public_key=keys["public_key"], nonce_store=nonce_store)
+        assert result1["valid"] is True
+        result2 = vpe_verify(env, public_key=keys["public_key"], nonce_store=nonce_store)
+        assert result2["valid"] is True
 
     def test_missing_nonce_rejected(self, keys):
         env = json.loads(
@@ -729,7 +766,7 @@ class TestHMACSigning:
         env = vpe_sign_hmac("hello", shared_secret=hmac_secret)
         data = json.loads(env)
         expected = {"vpe_version", "prompt", "scope", "issuer", "audience",
-                    "doc_sha256", "ttl_seconds", "nonce", "counter", "signature"}
+                    "doc_sha256", "iat", "ttl_seconds", "nonce", "counter", "signature"}
         assert set(data.keys()) == expected
 
     def test_signature_is_32_bytes(self, hmac_secret):
@@ -1403,6 +1440,119 @@ class TestEnvelopeCertChain:
         tampered = json.dumps(data, separators=(",", ":"))
         result = vpe_verify(tampered, trust_anchor=cert_chain["root_public_key"])
         assert result["valid"] is False
+
+
+# ---------------------------------------------------------------------------
+# TTL expiry — iat-based enforcement (P5.2 fix: L-001)
+# ---------------------------------------------------------------------------
+
+
+class TestTTLExpiry:
+    """TTL expiry enforced via iat (issued-at) timestamp signed into envelope."""
+
+    def test_ttl_expiry_rejects_expired(self, keys):
+        """Envelope with 1s TTL verified after 2s delay must be rejected."""
+        env = vpe_sign("hello", ttl_seconds=1, private_key=keys["private_key"])
+        time.sleep(2)
+        result = vpe_verify(env, public_key=keys["public_key"])
+        assert result["valid"] is False
+        assert result["reason"] == "envelope_expired"
+
+    def test_ttl_zero_always_valid(self, keys):
+        """Envelope with ttl_seconds=0 must be valid regardless of age."""
+        from seal.core import _canonical_json, _load_private_key
+
+        env = vpe_sign("hello", ttl_seconds=0, private_key=keys["private_key"])
+        data = json.loads(env)
+        # Simulate it was issued 1 hour ago
+        data["iat"] = int(time.time()) - 3600
+        data["signature"] = ""
+        canon = _canonical_json(data)
+        sk = _load_private_key(keys["private_key"])
+        data["signature"] = sk.sign(canon).hex()
+        tampered_env = json.dumps(data, separators=(",", ":"))
+        result = vpe_verify(tampered_env, public_key=keys["public_key"])
+        assert result["valid"] is True
+
+    def test_missing_iat_backward_compat(self, keys):
+        """Envelope without iat field must verify as valid (backward compat)."""
+        from seal.core import _canonical_json, _load_private_key
+
+        env = vpe_sign("hello", ttl_seconds=10, private_key=keys["private_key"])
+        data = json.loads(env)
+        del data["iat"]
+        data["signature"] = ""
+        canon = _canonical_json(data)
+        sk = _load_private_key(keys["private_key"])
+        data["signature"] = sk.sign(canon).hex()
+        tampered_env = json.dumps(data, separators=(",", ":"))
+        result = vpe_verify(tampered_env, public_key=keys["public_key"])
+        assert result["valid"] is True
+
+    def test_iat_integer_rejects_nonint(self, keys):
+        """iat field that is not an integer must be rejected."""
+        from seal.core import _canonical_json, _load_private_key
+
+        env = vpe_sign("hello", ttl_seconds=10, private_key=keys["private_key"])
+        data = json.loads(env)
+        data["iat"] = "not-an-integer"
+        data["signature"] = ""
+        canon = _canonical_json(data)
+        sk = _load_private_key(keys["private_key"])
+        data["signature"] = sk.sign(canon).hex()
+        tampered_env = json.dumps(data, separators=(",", ":"))
+        result = vpe_verify(tampered_env, public_key=keys["public_key"])
+        assert result["valid"] is False
+        assert result["reason"] == "iat_not_integer"
+
+    def test_tampered_iat_rejected_by_signature(self, keys):
+        """Tampering iat after signing must fail signature check."""
+        env = vpe_sign("hello", ttl_seconds=10, private_key=keys["private_key"])
+        data = json.loads(env)
+        data["iat"] = data["iat"] - 99999
+        tampered_env = json.dumps(data, separators=(",", ":"))
+        result = vpe_verify(tampered_env, public_key=keys["public_key"])
+        assert result["valid"] is False
+        assert result["reason"] == "signature_mismatch"
+
+    def test_iat_present_in_signed_envelope(self, keys):
+        """vpe_sign() must include iat in the output envelope."""
+        env = vpe_sign("hello", private_key=keys["private_key"])
+        data = json.loads(env)
+        assert "iat" in data
+        assert isinstance(data["iat"], int)
+
+    def test_iat_strippable_default_in_compact(self, keys):
+        """iat is not in strippable defaults — it must survive compact mode."""
+        env = vpe_sign("hello", compact=True, private_key=keys["private_key"])
+        data = json.loads(env)
+        assert "iat" in data
+        assert isinstance(data["iat"], int)
+
+    def test_hmac_ttl_expiry_rejects_expired(self, hmac_secret):
+        """HMAC envelope with 1s TTL verified after 2s must be rejected."""
+        env = vpe_sign_hmac("hello", ttl_seconds=1, shared_secret=hmac_secret)
+        time.sleep(2)
+        result = vpe_verify_hmac(env, shared_secret=hmac_secret)
+        assert result["valid"] is False
+        assert result["reason"] == "envelope_expired"
+
+    def test_hmac_iat_present(self, hmac_secret):
+        """vpe_sign_hmac() must include iat in the output envelope."""
+        env = vpe_sign_hmac("hello", shared_secret=hmac_secret)
+        data = json.loads(env)
+        assert "iat" in data
+        assert isinstance(data["iat"], int)
+
+    def test_hmac_tampered_iat_rejected(self, hmac_secret):
+        """Tampering iat in HMAC envelope must break signature."""
+        env = vpe_sign_hmac("hello", shared_secret=hmac_secret)
+        data = json.loads(env)
+        data["iat"] = data["iat"] - 99999
+        tampered = json.dumps(data, separators=(",", ":"))
+        result = vpe_verify_hmac(tampered, shared_secret=hmac_secret)
+        assert result["valid"] is False
+        assert result["reason"] == "signature_mismatch"
 
 
 # ---------------------------------------------------------------------------
