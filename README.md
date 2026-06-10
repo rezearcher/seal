@@ -21,7 +21,12 @@ Seal replaces linguistic injection detection with **cryptographic provenance ver
 ## Quickstart
 
 ```bash
-pip install seal-vpe
+# Install (one command). `pip install seal-vpe` is planned but NOT yet on PyPI.
+pip install git+https://github.com/rezearcher/seal.git
+# or from a clone: pip install -e ".[dev]"
+
+# See it all end-to-end in one shot
+seal quickstart
 
 # Generate a key pair
 seal genkey
