@@ -43,6 +43,24 @@ This is "prove its effectiveness and make it more effective for clients," with a
    git version). Confirm the import surface (`from seal.memory import sign_memory, verify_on_recall`)
    is stable API.
 
+## RESULT — memory-poison defense [PROVEN] in a live system (2026-06-11)
+First-client validation executed. In a 1000-tick Lamarck run on a real text corpus, 50% of episodic
+writes were fabricated (constant garbage target = self-training poison):
+- **Unsigned store (no Seal):** all 16087 poison events admitted; replay corrupted learning; the
+  population's prediction loss on *real held-out data* rose to **5.84 nats — past the 5.55-nat uniform
+  prior** (worse than random guessing). **Collapse.**
+- **Seal-gated store** (`sign_memory(writer="world:stream")` on write, `verify_memory(trusted_writers=
+  {"world:stream"})` on admission; poison forged with a non-world key → invalid signature):
+  **16087 / 16087 poison events rejected**, fresh-loss 5.48 nats ≈ the clean baseline (5.29).
+- Collapse magnitude +0.55 nats; Seal-protected +0.19 nats.
+
+**This moves Seal's memory-poison claim from [THEORY] to [PROVEN]** — evidence from a real always-on
+self-training workload, not a synthetic red-team. Notable: the collapse showed ONLY in the exogenous
+grader; the unsigned population's *diversity even rose* (cells diverging on garbage) — so a diversity
+check would miss it and provenance verification is the correct defense. Repro:
+`~/projects/lamarck/experiments/m1_seal_collapse/` (`collapse_test.py`, `RESULTS.md`). Suggest adding a
+row to `THESIS_AND_VALIDATION.md`'s ledger citing this.
+
 ## Status of incorporation
 Lamarck will wire Seal at its **K4 (memory)** milestone (next in its build sequence). Until then this
 is a captured direction on both sides. No Seal change is blocking; items (1)–(4) are the backlog this
