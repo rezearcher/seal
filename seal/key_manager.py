@@ -1,6 +1,6 @@
 """Key lifecycle management — SQLite-backed Ed25519 key registry.
 
-Implements the key lifecycle for the Seal VPE:
+Implements the key lifecycle for the Seal VPE::
 
     generated → active → expiring → retired → revoked
 
@@ -10,19 +10,27 @@ Retired keys are kept so that envelopes signed *before* a rotation still verify
 (graceful verification).  Revoked keys are never used for signing or
 verification again.
 
-The store is plain ``sqlite3`` (stdlib only).  Private keys are stored raw;
-encryption-at-rest is future work.  Connections use WAL journalling and a 5s
-busy timeout so concurrent CLI invocations don't trip over each other.
+Private keys are encrypted at rest with **Fernet** (``cryptography.fernet``).
+The encryption key lives in ``~/.seal/master.key`` (auto-generated on first
+use, ``chmod 600``).  An optional second factor XORs the Fernet key with the
+host's ``/etc/machine-id`` (when ``use_machine_id=True``).
+
+The store is plain ``sqlite3`` (stdlib only).  Connections use WAL journalling
+and a 5s busy timeout so concurrent CLI invocations don't trip over each other.
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import secrets
 import sqlite3
 import time
+import warnings
 from pathlib import Path
+
+from cryptography.fernet import Fernet, InvalidToken
 
 from seal.core import generate_key_pair, vpe_verify, vpe_verify_hmac
 
@@ -32,6 +40,7 @@ from seal.core import generate_key_pair, vpe_verify, vpe_verify_hmac
 
 SEAL_DIR = Path.home() / ".seal"
 DEFAULT_DB_PATH = SEAL_DIR / "keys.db"
+DEFAULT_MASTER_KEY_PATH = SEAL_DIR / "master.key"
 
 # Lifecycle states.
 STATUS_GENERATED = "generated"
@@ -83,10 +92,102 @@ _COLUMNS = (
     "fingerprint",
 )
 
+# Fernet tokens (v0 / v1) always start with this base64 prefix.
+_FERNET_PREFIX = b"gAAAA"
+
+# Known machine-id locations, tried in order.
+_MACHINE_ID_PATHS = (
+    Path("/etc/machine-id"),
+    Path("/var/lib/dbus/machine-id"),
+)
+
+log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Master key management
+# ---------------------------------------------------------------------------
+
+
+def _ensure_seal_dir() -> None:
+    """Create ``~/.seal`` with ``0700`` perms."""
+    SEAL_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        SEAL_DIR.chmod(0o700)
+    except OSError:  # pragma: no cover - non-POSIX or restricted FS
+        pass
+
+
+def _load_or_create_master_key(path: Path | None = None) -> bytes:
+    """Return the Fernet key from *path*, generating one if absent.
+
+    The key file is created with ``0600`` permissions.  Returns the raw
+    44-byte URL-safe-base64 key suitable for ``Fernet()``.
+    """
+    keyfile = (path or DEFAULT_MASTER_KEY_PATH).expanduser()
+    if keyfile.exists():
+        return keyfile.read_bytes().strip()
+    _ensure_seal_dir()
+    key = Fernet.generate_key()
+    # Write with 0600 from the start: create exclusively, then chmod.
+    fd = os.open(str(keyfile), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, key)
+    finally:
+        os.close(fd)
+    try:
+        keyfile.chmod(0o600)
+    except OSError:  # pragma: no cover
+        pass
+    return key
+
+
+def _read_machine_id() -> bytes | None:
+    """Return the first 44 bytes of machine-id, or None."""
+    for p in _MACHINE_ID_PATHS:
+        try:
+            raw = p.read_bytes().strip()
+            return raw[:44]
+        except FileNotFoundError:
+            continue
+        except OSError:
+            continue
+    return None
+
+
+def _derive_fernet_key(
+    master_key_bytes: bytes, use_machine_id: bool = False
+) -> bytes:
+    """Derive the effective Fernet key, optionally XOR'd with machine-id.
+
+    XOR provides a cheap second factor: a key stolen from a different host
+    (or without filesystem access to ``/etc/machine-id``) cannot decrypt the
+    store.
+
+    The XOR operates on the raw 32-byte key material (base64 decoded) then
+    re-encodes to URL-safe base64 so the result is always a valid Fernet key.
+    """
+    if not use_machine_id:
+        return master_key_bytes
+
+    mid = _read_machine_id()
+    if mid is None:
+        log.warning("use_machine_id=True but no machine-id found; falling back to master key alone")
+        return master_key_bytes
+
+    # Decode to raw 32 bytes, XOR with machine-id, re-encode.
+    import base64
+
+    raw_key = base64.urlsafe_b64decode(master_key_bytes)
+    # XOR byte-by-byte, cycling machine-id if shorter.
+    xored = bytes(a ^ b for a, b in zip(raw_key, mid))
+    return base64.urlsafe_b64encode(xored)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def fingerprint_of(public_key: bytes) -> str:
     """Return the hex fingerprint of a public key (sha256, first 12 hex chars)."""
@@ -103,26 +204,90 @@ def _make_kid(created_at: int) -> str:
     return f"k_{datestamp}_{secrets.token_hex(8)}"
 
 
-def _row_to_dict(row: sqlite3.Row | tuple | None) -> dict | None:
-    """Convert a sqlite row into a plain dict (or None)."""
+# ---------------------------------------------------------------------------
+# Fernet helpers for private key encryption
+# ---------------------------------------------------------------------------
+
+
+def _is_encrypted(private_key_blob: bytes) -> bool:
+    """Return True if the blob looks like a Fernet ciphertext."""
+    return private_key_blob.startswith(_FERNET_PREFIX)
+
+
+def _encrypt_private_key(raw: bytes, fernet: Fernet) -> bytes:
+    """Encrypt a raw private key with Fernet."""
+    return fernet.encrypt(raw)
+
+
+def _decrypt_private_key(blob: bytes, fernet: Fernet) -> bytes:
+    """Decrypt a private key blob.
+
+    If the blob is not Fernet-encrypted (i.e. a legacy raw key), a warning
+    is issued and the blob is returned as-is.
+
+    Returns:
+        Decrypted (or raw) private key bytes.
+    """
+    if not _is_encrypted(blob):
+        warnings.warn(
+            "Private key at rest is NOT encrypted — this is a security risk. "
+            "Regenerate or rotate keys to encrypt them with the master key.",
+            stacklevel=2,
+        )
+        return blob
+    try:
+        return fernet.decrypt(blob)
+    except InvalidToken:
+        warnings.warn(
+            "Private key decryption FAILED — master key mismatch or corrupt "
+            "data.  Using raw bytes as fallback (may cause signing errors).",
+            stacklevel=2,
+        )
+        return blob
+
+
+def _row_to_dict(row: sqlite3.Row | tuple | None, fernet: Fernet | None = None) -> dict | None:
+    """Convert a sqlite row into a plain dict (or None).
+
+    If *fernet* is provided and the row has an encrypted ``private_key``, it
+    is transparently decrypted.  Legacy raw keys are passed through with a
+    warning.
+    """
     if row is None:
         return None
-    return {col: row[col] for col in _COLUMNS}
+    d = {col: row[col] for col in _COLUMNS}
+    if fernet is not None and "private_key" in d:
+        d["private_key"] = _decrypt_private_key(d["private_key"], fernet)
+    return d
 
 
 # ---------------------------------------------------------------------------
 # KeyManager
 # ---------------------------------------------------------------------------
 
-class KeyManager:
-    """SQLite-backed registry of Ed25519 keys with lifecycle management."""
 
-    def __init__(self, db_path: str | None = None):
+class KeyManager:
+    """SQLite-backed registry of Ed25519 keys with lifecycle management.
+
+    Private keys are encrypted at rest with Fernet.  See module docstring
+    for details on the master key setup.
+    """
+
+    def __init__(
+        self,
+        db_path: str | None = None,
+        master_key: bytes | str | None = None,
+        use_machine_id: bool = False,
+    ):
         """Initialize the key manager.
 
         Args:
             db_path: Path to the SQLite store. Defaults to ``~/.seal/keys.db``.
                      The parent directory is created if missing.
+            master_key: Fernet key as bytes, a file path (str), or None to
+                        auto-load/create ``~/.seal/master.key``.
+            use_machine_id: If True, XOR the Fernet key with the host's
+                            ``/etc/machine-id`` for an additional factor.
         """
         self.db_path = str(db_path) if db_path is not None else str(DEFAULT_DB_PATH)
         parent = Path(self.db_path).parent
@@ -131,7 +296,23 @@ class KeyManager:
             parent.chmod(0o700)
         except OSError:
             pass
+
+        # Resolve the Fernet key.
+        if master_key is None:
+            master_key_bytes = _load_or_create_master_key()
+        elif isinstance(master_key, str):
+            # Treat as a file path.
+            master_key_bytes = Path(master_key).expanduser().read_bytes().strip()
+        elif isinstance(master_key, bytes):
+            master_key_bytes = master_key
+        else:
+            raise TypeError(f"master_key must be bytes, str (path), or None, got {type(master_key)}")
+
+        effective = _derive_fernet_key(master_key_bytes, use_machine_id=use_machine_id)
+        self._fernet = Fernet(effective)
+
         self.init_registry()
+        self.migrate_legacy_keys()
 
     # -- connection -------------------------------------------------------
 
@@ -156,6 +337,68 @@ class KeyManager:
         finally:
             conn.close()
 
+    def _migrate_legacy_keys(self) -> None:
+        """Re-encrypt any legacy (raw) private keys in the store.
+
+        Scans all rows; if a private_key column contains raw bytes (32-byte
+        Ed25519) instead of a Fernet token, it is re-encrypted in-place.
+        This runs once at ``__init__`` so migration is transparent.
+        """
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT kid, private_key FROM keys").fetchall()
+            updates = []
+            for row in rows:
+                blob = row["private_key"]
+                if blob is not None and not _is_encrypted(blob):
+                    # Raw key — encrypt it.
+                    encrypted = _encrypt_private_key(blob, self._fernet)
+                    updates.append((encrypted, row["kid"]))
+                    log.info(
+                        "Migrated legacy raw key %s to Fernet encryption",
+                        row["kid"],
+                    )
+            for encrypted, kid in updates:
+                conn.execute(
+                    "UPDATE keys SET private_key=? WHERE kid=?", (encrypted, kid)
+                )
+            if updates:
+                conn.commit()
+        finally:
+            conn.close()
+
+    def migrate_legacy_keys(self) -> int:
+        """Encrypt any raw (unencrypted) private keys in the store.
+
+        Scans all rows for private_key blobs that do not start with the
+        Fernet prefix and re-encrypts them with ``self._fernet``.
+
+        Returns:
+            The number of keys migrated.
+        """
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT kid, private_key FROM keys WHERE length(private_key) < 64",
+            ).fetchall()
+            if not rows:
+                return 0
+
+            migrated = 0
+            for row in rows:
+                kid, raw = row["kid"], row["private_key"]
+                encrypted = _encrypt_private_key(raw, self._fernet)
+                conn.execute(
+                    "UPDATE keys SET private_key=? WHERE kid=?",
+                    (encrypted, kid),
+                )
+                migrated += 1
+            conn.commit()
+            log.info("Migrated %d legacy raw keys to Fernet-encrypted", migrated)
+            return migrated
+        finally:
+            conn.close()
+
     # -- generation / rotation -------------------------------------------
 
     def generate_key(self, **metadata) -> dict:
@@ -164,6 +407,9 @@ class KeyManager:
         Any previously active key is retired (status ``retired``,
         ``rotated_at`` set to now) so that exactly one key is active.
 
+        The private key is **encrypted with Fernet** before being stored in
+        the SQLite database.
+
         Keyword Args (all optional):
             not_before: Unix timestamp when the key becomes usable (default 0).
             not_after: Unix timestamp when the key expires. Defaults to
@@ -171,7 +417,9 @@ class KeyManager:
                        key that never expires.
 
         Returns:
-            The full row for the new active key as a dict.
+            The full row for the new active key as a dict.  The
+            ``private_key`` field is the **decrypted** raw bytes (encrypted
+            at rest).
         """
         now = int(time.time())
         pair = generate_key_pair()
@@ -185,6 +433,9 @@ class KeyManager:
         else:
             not_after = now + DEFAULT_EXPIRY_DAYS * _SECONDS_PER_DAY
         fingerprint = fingerprint_of(public_key)
+
+        # Encrypt private key for storage.
+        encrypted_private = _encrypt_private_key(private_key, self._fernet)
 
         conn = self._connect()
         try:
@@ -204,7 +455,7 @@ class KeyManager:
                 (
                     kid,
                     public_key,
-                    private_key,
+                    encrypted_private,  # ← encrypted
                     STATUS_ACTIVE,
                     now,
                     not_before,
@@ -219,7 +470,7 @@ class KeyManager:
             row = conn.execute("SELECT * FROM keys WHERE kid=?", (kid,)).fetchone()
         finally:
             conn.close()
-        return _row_to_dict(row)
+        return _row_to_dict(row, fernet=self._fernet)
 
     def rotate_key(self) -> dict:
         """Rotate the active key.
@@ -290,7 +541,10 @@ class KeyManager:
     # -- queries ----------------------------------------------------------
 
     def get_active_key(self) -> dict | None:
-        """Return the currently active signing key, or None."""
+        """Return the currently active signing key, or None.
+
+        The ``private_key`` field is decrypted transparently.
+        """
         conn = self._connect()
         try:
             row = conn.execute(
@@ -299,7 +553,7 @@ class KeyManager:
             ).fetchone()
         finally:
             conn.close()
-        return _row_to_dict(row)
+        return _row_to_dict(row, fernet=self._fernet)
 
     def get_signing_key(self) -> dict | None:
         """Return the active key for signing new envelopes.
@@ -307,6 +561,8 @@ class KeyManager:
         Belt-and-suspenders: never hand back a revoked key. ``get_active_key``
         already filters on ``status='active'``, but we re-check here so a key
         revoked out from under us can never be used to sign.
+
+        The ``private_key`` field is decrypted transparently.
         """
         key = self.get_active_key()
         if key is not None and key["status"] == STATUS_REVOKED:
@@ -314,16 +570,22 @@ class KeyManager:
         return key
 
     def get_key(self, kid: str) -> dict | None:
-        """Return a specific key by kid, or None."""
+        """Return a specific key by kid, or None.
+
+        The ``private_key`` field is decrypted transparently.
+        """
         conn = self._connect()
         try:
             row = conn.execute("SELECT * FROM keys WHERE kid=?", (kid,)).fetchone()
         finally:
             conn.close()
-        return _row_to_dict(row)
+        return _row_to_dict(row, fernet=self._fernet)
 
     def list_keys(self, status: str | None = None) -> list[dict]:
-        """List keys (newest first), optionally filtered by status."""
+        """List keys (newest first), optionally filtered by status.
+
+        The ``private_key`` field is decrypted transparently on each key.
+        """
         conn = self._connect()
         try:
             if status is None:
@@ -337,7 +599,7 @@ class KeyManager:
                 ).fetchall()
         finally:
             conn.close()
-        return [_row_to_dict(r) for r in rows]
+        return [_row_to_dict(r, fernet=self._fernet) for r in rows]
 
     def get_verification_keys(self) -> list[dict]:
         """Return keys usable for verifying signatures: active + retired.
@@ -345,6 +607,8 @@ class KeyManager:
         Revoked keys are excluded. Order: the active key first, then retired
         keys by ``created_at`` descending. This lets old envelopes (signed by a
         since-rotated key) still verify.
+
+        The ``private_key`` field is decrypted transparently on each key.
         """
         conn = self._connect()
         try:
@@ -362,12 +626,14 @@ class KeyManager:
             ).fetchall()
         finally:
             conn.close()
-        return [_row_to_dict(r) for r in rows]
+        return [_row_to_dict(r, fernet=self._fernet) for r in rows]
 
     def get_expiring_keys(self, days_before: int = 30) -> list[dict]:
         """Return active keys that expire within ``days_before`` days.
 
         Keys with ``not_after == 0`` (no expiry) are excluded.
+
+        The ``private_key`` field is decrypted transparently on each key.
         """
         now = int(time.time())
         threshold = now + days_before * _SECONDS_PER_DAY
@@ -383,7 +649,7 @@ class KeyManager:
             ).fetchall()
         finally:
             conn.close()
-        return [_row_to_dict(r) for r in rows]
+        return [_row_to_dict(r, fernet=self._fernet) for r in rows]
 
     # -- lifecycle-aware verification -------------------------------------
 

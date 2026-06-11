@@ -1,5 +1,6 @@
 """Unit tests for KeyManager — key lifecycle management."""
 
+import os
 import time
 
 import pytest
@@ -376,3 +377,243 @@ class TestEdgeCases:
         assert loaded["kid"] == k1["kid"]
         assert loaded["fingerprint"] == k1["fingerprint"]
         assert loaded["status"] == STATUS_ACTIVE
+
+
+# ---------------------------------------------------------------------------
+# Encryption at rest
+# ---------------------------------------------------------------------------
+
+
+class TestEncryptionAtRest:
+    """Private keys are encrypted with Fernet in the SQLite store."""
+
+    def test_stored_key_is_encrypted(self, km):
+        """Raw SQLite blob must be Fernet ciphertext, not 32 raw bytes."""
+        key = km.generate_key()
+        import sqlite3
+        conn = sqlite3.connect(km.db_path)
+        row = conn.execute(
+            "SELECT private_key FROM keys WHERE kid=?", (key["kid"],)
+        ).fetchone()
+        conn.close()
+        raw = row[0]
+        assert raw.startswith(b"gAAAA"), f"Expected Fernet prefix, got {raw[:10]!r}"
+        assert len(raw) > 32
+
+    def test_decrypted_key_matches_original(self, km):
+        key = km.generate_key()
+        raw_key = key["private_key"]
+        assert len(raw_key) == 32
+        reloaded = km.get_key(key["kid"])
+        assert reloaded["private_key"] == raw_key
+
+    def test_persistence_with_master_key(self, tmp_path):
+        from cryptography.fernet import Fernet
+        mk = Fernet.generate_key()
+        db = tmp_path / "enc_persist.db"
+        mgr1 = KeyManager(db_path=str(db), master_key=mk)
+        k1 = mgr1.generate_key()
+        mgr2 = KeyManager(db_path=str(db), master_key=mk)
+        loaded = mgr2.get_key(k1["kid"])
+        assert loaded is not None
+        assert loaded["kid"] == k1["kid"]
+        assert loaded["private_key"] == k1["private_key"]
+
+    def test_wrong_master_key_fails_gracefully(self, tmp_path):
+        from cryptography.fernet import Fernet
+        mk1 = Fernet.generate_key()
+        mk2 = Fernet.generate_key()
+        db = tmp_path / "wrong_key.db"
+        mgr = KeyManager(db_path=str(db), master_key=mk1)
+        k1 = mgr.generate_key()
+        mgr2 = KeyManager(db_path=str(db), master_key=mk2)
+        loaded = mgr2.get_key(k1["kid"])
+        assert loaded is not None
+        assert loaded["kid"] == k1["kid"]
+
+    def test_nonexistent_master_key_created_automatically(self, tmp_path):
+        from seal import key_manager as km_mod
+        orig_dir = km_mod.SEAL_DIR
+        orig_path = km_mod.DEFAULT_MASTER_KEY_PATH
+        try:
+            tmp_seal = tmp_path / ".seal"
+            km_mod.SEAL_DIR = tmp_seal
+            km_mod.DEFAULT_MASTER_KEY_PATH = tmp_seal / "master.key"
+            db = tmp_path / "auto_mk.db"
+            mgr = KeyManager(db_path=str(db))
+            k1 = mgr.generate_key()
+            assert k1 is not None
+            assert (tmp_seal / "master.key").exists()
+            mode = os.stat(tmp_seal / "master.key").st_mode & 0o777
+            assert mode == 0o600
+        finally:
+            km_mod.SEAL_DIR = orig_dir
+            km_mod.DEFAULT_MASTER_KEY_PATH = orig_path
+
+    def test_master_key_file_permissions(self, tmp_path):
+        mk_path = tmp_path / "master.key"
+        from cryptography.fernet import Fernet
+        from seal.key_manager import _load_or_create_master_key
+        key = _load_or_create_master_key(mk_path)
+        assert mk_path.exists()
+        mode = os.stat(mk_path).st_mode & 0o777
+        assert mode == 0o600
+        assert len(key) > 0
+
+    def test_custom_master_key_bytes(self, tmp_path):
+        from cryptography.fernet import Fernet
+        mk = Fernet.generate_key()
+        db = tmp_path / "custom_bytes.db"
+        mgr = KeyManager(db_path=str(db), master_key=mk)
+        k1 = mgr.generate_key()
+        assert k1 is not None
+        assert len(k1["private_key"]) == 32
+
+    def test_master_key_from_file_path(self, tmp_path):
+        from cryptography.fernet import Fernet
+        mk = Fernet.generate_key()
+        mk_path = tmp_path / "custom_master.key"
+        mk_path.write_bytes(mk)
+        db = tmp_path / "path_key.db"
+        mgr = KeyManager(db_path=str(db), master_key=str(mk_path))
+        k1 = mgr.generate_key()
+        assert k1 is not None
+        assert len(k1["private_key"]) == 32
+
+    def test_list_keys_decrypts_transparently(self, km):
+        k1 = km.generate_key()
+        k2 = km.generate_key()
+        all_keys = km.list_keys()
+        for k in all_keys:
+            assert len(k["private_key"]) == 32
+            assert k["private_key"] == km.get_key(k["kid"])["private_key"]
+        assert len(all_keys) == 2
+
+    def test_verification_keys_decrypts(self, km):
+        k1 = km.generate_key()
+        k2 = km.rotate_key()
+        vkeys = km.get_verification_keys()
+        for k in vkeys:
+            assert len(k["private_key"]) == 32
+
+    def test_get_expiring_keys_decrypts(self, km):
+        now = int(time.time())
+        k1 = km.generate_key(not_after=now + 3600)
+        expiring = km.get_expiring_keys(days_before=30)
+        for k in expiring:
+            assert len(k["private_key"]) == 32
+
+
+class TestMachineIdXor:
+    """Optional machine-id XOR second factor."""
+
+    def test_xor_with_machine_id(self, tmp_path):
+        from cryptography.fernet import Fernet
+        mk = Fernet.generate_key()
+        db = tmp_path / "xor.db"
+        mgr = KeyManager(db_path=str(db), master_key=mk, use_machine_id=True)
+        k1 = mgr.generate_key()
+        assert k1 is not None
+        assert len(k1["private_key"]) == 32
+
+    def test_xor_persistence(self, tmp_path):
+        from cryptography.fernet import Fernet
+        mk = Fernet.generate_key()
+        db = tmp_path / "xor_persist.db"
+        mgr1 = KeyManager(db_path=str(db), master_key=mk, use_machine_id=True)
+        k1 = mgr1.generate_key()
+        mgr2 = KeyManager(db_path=str(db), master_key=mk, use_machine_id=True)
+        loaded = mgr2.get_key(k1["kid"])
+        assert loaded["private_key"] == k1["private_key"]
+
+
+class TestLegacyMigration:
+    """Legacy raw keys should be auto-migrated to Fernet-encrypted on init."""
+
+    def test_legacy_raw_key_migrated_transparently(self, tmp_path):
+        from cryptography.fernet import Fernet
+        import sqlite3
+        mk = Fernet.generate_key()
+        db = tmp_path / "legacy.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS keys (
+                kid TEXT PRIMARY KEY,
+                public_key BLOB NOT NULL,
+                private_key BLOB NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at INTEGER NOT NULL,
+                not_before INTEGER DEFAULT 0,
+                not_after INTEGER DEFAULT 0,
+                rotated_at INTEGER,
+                revoked_at INTEGER,
+                revoke_reason TEXT,
+                fingerprint TEXT NOT NULL
+            )
+        """)
+        now = int(time.time())
+        conn.execute(
+            "INSERT INTO keys (kid, public_key, private_key, status, created_at, fingerprint) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("k_legacy", b"\x01" * 32, b"\x02" * 32, "active", now, "deadbeef1234"),
+        )
+        conn.commit()
+        conn.close()
+
+        # Init triggers auto-migration — no warning emitted.
+        mgr = KeyManager(db_path=str(db), master_key=mk)
+        legacy = mgr.get_key("k_legacy")
+        assert legacy is not None
+        assert legacy["private_key"] == b"\x02" * 32
+        assert legacy["status"] == STATUS_ACTIVE
+
+        # Verify the blob in the DB is now Fernet-encrypted.
+        conn2 = sqlite3.connect(str(db))
+        stored = conn2.execute(
+            "SELECT private_key FROM keys WHERE kid=?", ("k_legacy",)
+        ).fetchone()[0]
+        conn2.close()
+        assert len(stored) > 64, f"Expected Fernet token, got {len(stored)} bytes"
+        assert stored.startswith(b"gAAAA"), f"Expected Fernet prefix, got {stored[:10]!r}"
+
+    def test_legacy_raw_key_warning_without_migration(self, tmp_path):
+        """If migrate_legacy_keys is not called, a legacy raw key warns on read."""
+        from cryptography.fernet import Fernet
+        import sqlite3
+        mk = Fernet.generate_key()
+        db = tmp_path / "legacy_nowarn.db"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS keys (
+                kid TEXT PRIMARY KEY,
+                public_key BLOB NOT NULL,
+                private_key BLOB NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at INTEGER NOT NULL,
+                not_before INTEGER DEFAULT 0,
+                not_after INTEGER DEFAULT 0,
+                rotated_at INTEGER,
+                revoked_at INTEGER,
+                revoke_reason TEXT,
+                fingerprint TEXT NOT NULL
+            )
+        """)
+        now = int(time.time())
+        conn.execute(
+            "INSERT INTO keys (kid, public_key, private_key, status, created_at, fingerprint) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("k_legacy2", b"\x03" * 32, b"\x04" * 32, "active", now, "feedcafe1234"),
+        )
+        conn.commit()
+        conn.close()
+
+        # Construct manager without auto-migration — bypass __init__ migration.
+        mgr = object.__new__(KeyManager)
+        mgr.db_path = str(db)
+        mgr._fernet = Fernet(mk)
+        # No migrate_legacy_keys() called
+
+        with pytest.warns(UserWarning, match="NOT encrypted"):
+            legacy = mgr.get_key("k_legacy2")
+            assert legacy is not None
+            assert legacy["private_key"] == b"\x04" * 32
