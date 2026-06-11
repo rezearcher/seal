@@ -161,6 +161,26 @@ war — we must not *lose* it while we win the deterministic classes.**
   **cannot** measure it. Needs aligned target + JailbreakBench-style harmful
   intent + judge-scored compliance.
 
+### Measurement rig built + first clean result (2026-06-10)
+`assay/redteam/` — aligned target + harmful-intent behaviors + LLM harm-judge +
+ASR evaluator (143 tests). **Premise fixed:** `qwen2.5:14b-instruct` refuses 5/5
+(then 12/12) direct harm — real alignment, unlike qwen3:8b. First clean sweep
+(12 behaviors × {direct, past-tense, deepinception} × {none, back-translation}):
+
+| framing | no-defense ASR | back-translation ASR |
+|---|---|---|
+| direct | 0.00 | 0.00 |
+| past_tense | **0.08** | **0.00** |
+| deepinception | 0.00 | 0.00 |
+
+- **Directional WIN for the transform thesis:** the one attack that landed
+  (past-tense 8%) was suppressed to 0 by back-translation — on real intent,
+  judge-scored. But **n=1 success; not conclusive.**
+- **New floor problem:** 14b is too robust for these framings (1/36 attempts
+  landed). Need a non-zero baseline (~20-40% ASR) to measure suppression with
+  signal → use **stronger attacks** (policy-puppetry/many-shot/crescendo, or JBB
+  pre-optimized PAIR/GCG artifacts), or a Goldilocks target.
+
 ### Cross-cutting blocker (both probes agree)
 **We cannot credibly test any model-behavior defense on `qwen3:8b` + marker
 batteries.** qwen3:8b is weakly aligned (complies with most direct harm) and
