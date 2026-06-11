@@ -144,5 +144,28 @@ war — we must not *lose* it while we win the deterministic classes.**
   (b) a competent instruction-following rewriter. Re-run with those before any
   verdict. Status: **not validated, not refuted — unmeasured.**
 
+**Round-trip transform probe (2026-06-10) — SIGNAL, but confounded:**
+- `assay/experiments/transform_defense_probe.py`. Round-tripped attacks EN→ZH→EN
+  (back-translation / SmoothLLM family), measured marker elicitation.
+- Result: semantic attacks (past-tense, deepinception, pap) **3/3 neutralized**
+  by the round-trip; encoded attacks (flipattack, codechameleon, artprompt)
+  **0/3** — but those were already blocked at baseline (8B can't decode), so
+  uninformative. **Contradicted the prior prediction** that "translation
+  preserves meaning so semantic attacks survive."
+- **Confound (do not bank the win):** success metric is a literal marker token,
+  which translation destroys *regardless of intent*. "Blocked" likely = "marker
+  didn't survive the round-trip," not "safety reasserted." Measures token
+  fragility, not attack defeat.
+- **Takeaway:** transformation/back-translation shows real disruption signal vs
+  semantic attacks (more promising than first argued) — but marker batteries
+  **cannot** measure it. Needs aligned target + JailbreakBench-style harmful
+  intent + judge-scored compliance.
+
+### Cross-cutting blocker (both probes agree)
+**We cannot credibly test any model-behavior defense on `qwen3:8b` + marker
+batteries.** qwen3:8b is weakly aligned (complies with most direct harm) and
+markers are transformation-fragile. Prerequisite for the whole semantic/transform
+research line: a safety-aligned target model + real-intent benchmark + a judge.
+
 **Rule for this program:** nothing moves from [THEORY] to [PROVEN] without a
 reproduced Assay number. Halfway is draft.
