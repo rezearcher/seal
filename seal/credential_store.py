@@ -8,10 +8,13 @@ that map. The plaintext map is held only in process memory.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import threading
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -114,6 +117,14 @@ class CredentialStore:
         try:
             ciphertext = self.path.read_bytes()
         except FileNotFoundError:
+            self._data = {}
+            return
+        except OSError as exc:
+            logger.warning(
+                "cannot read credential store %s: %s — initializing empty",
+                self.path,
+                exc,
+            )
             self._data = {}
             return
         if not ciphertext.strip():
