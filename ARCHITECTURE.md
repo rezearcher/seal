@@ -1,6 +1,6 @@
 # Seal — Verified Prompt Envelope Protocol & AI Agent Security
 
-> **Status:** Phases 1–9 core capabilities **implemented and tested** — VPE Core (Ed25519 + HMAC + multi-sig + hierarchical cert chains + hardware signing), EPD Scanner (regex + LLM + Unicode-smuggling defense), Secrets Broker, persistent stores, full key lifecycle + rotation daemon, Hermes/Division integration, rollback, adversarial fuzzer, and benchmarks. **569 tests (569 pass, 1 skip).**
+> **Status:** Phases 1–9 core capabilities **implemented and tested** — VPE Core (Ed25519 + HMAC + multi-sig + hierarchical cert chains + hardware signing), EPD Scanner (regex + LLM + Unicode-smuggling defense), Secrets Broker, persistent stores, full key lifecycle + rotation daemon, Hermes/Division integration, rollback, adversarial fuzzer, and benchmarks. **659 tests collected.**
 > **Remaining:** external adoption only — P8 (cross-language ports, OWASP/MCP standardization) and P10 (production-bake). See per-phase status tags below.
 > **Board:** seal
 > **Assignee profile:** default (Claude Code via Max plan)
@@ -125,7 +125,7 @@ A verified prompt is a JSON wrapper with Ed25519 signature:
 <a id="whats-built-current-state"></a>
 ## What's Built (current state)
 
-> Authoritative inventory of modules that physically exist, with the test file that exercises each. **569 tests collected; 569 pass, 1 skip.** Keep this table current when modules land — it is the anti-confusion anchor for the roadmap below.
+> Authoritative inventory of modules that physically exist, with the test file that exercises each. **659 tests collected.** Keep this table current when modules land — it is the anti-confusion anchor for the roadmap below.
 
 ### VPE Core — signing & verification (Phase 1, plus 5.4 / 9.1 / 9.3 / 9.4)
 | Module | LOC | Provides | Tests |
