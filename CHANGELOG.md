@@ -2,6 +2,20 @@
 
 All notable changes to Seal (VPE) are documented here.
 
+## Unreleased
+
+### Fixed
+
+- **Division VPE signer no longer swallows canonicalization errors** (L-010, kanban
+  `t_3035a8b3`). `DivisionVPESigner._record_audit` previously wrapped envelope hashing
+  in a blanket `except Exception` that silently fell back to a nonce-derived hash.
+  The handler is now narrowed to `(TypeError, ValueError, KeyError)`; on failure it
+  emits a `logger.warning`, prefixes the fallback identifier with `degraded:` so it
+  cannot be mistaken for a real SHA-256 envelope hash, and stamps the audit record
+  `reason="hash_computation_failed"`. The degraded-hash fallback is **retained and
+  flagged**, not removed — it still produces an identifier for audit-record lookup.
+  Gap: the failure branch has no dedicated test (`seal/integration/division_vpe_signer.py:217-234`).
+
 ## 0.1.0 — 2026-06-07
 
 ### Added
