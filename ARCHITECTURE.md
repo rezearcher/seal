@@ -165,7 +165,7 @@ A verified prompt is a JSON wrapper with Ed25519 signature:
 | `seal/integration/hermes_skills_guard.py` | — | VPE/EPD-backed skills guard | `test_e2e_real_tools.py` |
 | `seal/integration/division_vpe_signer.py` / `division_vpe_audit.py` | — | Sign Division episodes; store/query VPE results in Division memory (P6.4) | `test_division_audit.py` (13) |
 | `seal/division_audit.py` | 722 | Division audit-trail store + query | `test_division_audit.py` |
-| `seal/rollback.py` | 472 | One-toggle disable + full config rollback, audit preserved (P6.5) | `test_graceful_degradation.py` (20) |
+| `seal/rollback.py` | 501 | One-toggle disable + full config rollback, audit preserved (P6.5). Paths resolved lazily at call time via `_resolve_seal_home()`/`_resolve_hermes_home()` with `SEAL_HOME`/`HERMES_HOME` env overrides — no hardcoded `Path.home()` at import time (L-006) | `test_graceful_degradation.py` (20) |
 
 ### Advanced (Phase 9)
 | Module | LOC | Provides | Tests |
@@ -234,7 +234,7 @@ Nonce check           in-memory    SQLite, <1ms
 | P6.2 | End-to-end test with real tools | Full chain: prompt → VPE sign → Hermes receives → VPE verify → scope check → EPD scan → tool call → response → VPE sign response. Test with `read_file`, `terminal`, `web_search`. |
 | P6.3 | Graceful degradation | Unsigned prompts still work: logged as "unverified" with warning. Expired envelopes: logged, prompt still executed (configurable strict/lenient mode). Invalid signatures: rejected with clear error. |
 | P6.4 | Division audit trail | Every VPE verification result stored in Division memory as episode: envelope hash, issuer, result (valid/invalid/expired), timestamp. Queryable: "show me all rejected prompts in the last hour." Hardened (L-010, `t_3035a8b3`): audit hashing no longer swallows all exceptions — canonicalization failure now logs a warning, marks the record `hash_computation_failed`, and emits a `degraded:`-prefixed identifier instead of a hash silently aliased to the nonce. The degraded fallback is retained-and-flagged, not removed; its failure branch is not yet covered by a test. |
-| P6.5 | Rollback procedure | Disable VPE middleware with single config toggle. Script to roll back all VPE-related changes to Hermes config. No data loss on rollback — audit trail preserved. |
+| P6.5 | Rollback procedure | Disable VPE middleware with single config toggle. Script to roll back all VPE-related changes to Hermes config. No data loss on rollback — audit trail preserved. Hardened (L-006, `t_9da24d09`): `~/.seal` and `~/.hermes` paths are resolved lazily at call time (`_resolve_seal_home()`/`_resolve_hermes_home()`) instead of hardcoded `Path.home()` constants at import time, with `SEAL_HOME`/`HERMES_HOME` env overrides for testability and non-default homes. |
 
 ### Middleware Flow
 ```
