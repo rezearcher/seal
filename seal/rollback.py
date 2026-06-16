@@ -15,6 +15,7 @@ On rollback:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -24,6 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Lazy path resolvers — resolved at call time, not import time.
@@ -237,8 +240,10 @@ def _archive_audit(report: RollbackReport) -> None:
         return
 
     try:
-        count = sum(1 for _ in open(_seal_audit()) if _.strip())
+        with open(_seal_audit()) as f:
+            count = sum(1 for _ in f if _.strip())
     except Exception:
+        logger.warning("Failed to read audit log", exc_info=True)
         count = 0
 
     if count == 0:
@@ -485,8 +490,10 @@ def cmd_status() -> RollbackReport:
     # Check audit
     if _seal_audit().exists():
         try:
-            count = sum(1 for _ in open(_seal_audit()) if _.strip())
+            with open(_seal_audit()) as f:
+                count = sum(1 for _ in f if _.strip())
         except Exception:
+            logger.warning("Failed to read audit log for status report", exc_info=True)
             count = 0
         report.op(f"Audit log: {count} entries at {_seal_audit()}")
     else:

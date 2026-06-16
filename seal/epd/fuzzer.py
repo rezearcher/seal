@@ -25,10 +25,13 @@ Mutation strategies:
 from __future__ import annotations
 
 import itertools
+import logging
 import math
 import random
 import re
 from typing import Callable
+
+logger = logging.getLogger(__name__)
 
 from seal.epd.scanner import scan as epd_scan
 
@@ -679,7 +682,8 @@ def generate_mutations(
             fn = _STRATEGIES[strategy_name]
             try:
                 variants = fn(template)
-            except Exception:
+            except Exception as exc:
+                logger.warning("Mutation strategy %s failed on template %r: %s", strategy_name, template, exc)
                 continue
             for variant in variants:
                 if not variant or variant == template:
@@ -720,7 +724,8 @@ def generate_mutations(
                             "strategy_category": "composite",
                         })
                         break
-            except Exception:
+            except Exception as exc:
+                logger.warning("Composite mutation %s+%s failed on template %r: %s", s1, s2, t, exc)
                 continue
 
     return mutations[:target_count]
