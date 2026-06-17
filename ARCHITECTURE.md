@@ -140,7 +140,7 @@ A verified prompt is a JSON wrapper with Ed25519 signature:
 | `seal/epd/scanner.py` | 349 | Two-pass scan (regex ~91% + optional LLM). Normalization strips **all** Unicode format chars (Cf) + variation selectors; `_detect_hidden_unicode()` flags/decodes invisible **tag-block & variation-selector smuggling** (threat-model **T11**), runs unconditionally | `test_epd.py` (57) |
 | `seal/epd/patterns.py` | 615 | Regex patterns: jailbreaks, role-switch, ignore-instructions, delimiter confusion, hidden markers, tool hallucination, homoglyph/leet | — |
 | `seal/epd/llm_classifier.py` | 145 | LLM tiebreaker / `llm_scan_all` catch-all pass (independent model) | `test_epd.py` |
-| `seal/epd/fuzzer.py` | 955 | Pattern-mutation fuzzer, `seal fuzz` (P7.1 adversarial) | `test_epd.py` |
+| `seal/epd/fuzzer.py` | 960 | Pattern-mutation fuzzer, `seal fuzz` (P7.1 adversarial). Mutation-strategy + composite loops log a `logger.warning` on per-strategy failure rather than silently `continue` (t_ed914b66 / t_0b226fe3, e29288d) | `test_epd.py` |
 | `seal/epd/{config,models}.py` | 147 | `EPDConfig`, `EPDFlag`, `EPDResult` | `test_epd.py` |
 
 ### Secrets Broker — credentials out of context (Phase 3)
@@ -165,7 +165,7 @@ A verified prompt is a JSON wrapper with Ed25519 signature:
 | `seal/integration/hermes_skills_guard.py` | — | VPE/EPD-backed skills guard | `test_e2e_real_tools.py` |
 | `seal/integration/division_vpe_signer.py` / `division_vpe_audit.py` | — | Sign Division episodes; store/query VPE results in Division memory (P6.4) | `test_division_audit.py` (13) |
 | `seal/division_audit.py` | 722 | Division audit-trail store + query | `test_division_audit.py` |
-| `seal/rollback.py` | 501 | One-toggle disable + full config rollback, audit preserved (P6.5). Paths resolved lazily at call time via `_resolve_seal_home()`/`_resolve_hermes_home()` with `SEAL_HOME`/`HERMES_HOME` env overrides — no hardcoded `Path.home()` at import time (L-006) | `test_graceful_degradation.py` (20) |
+| `seal/rollback.py` | 508 | One-toggle disable + full config rollback, audit preserved (P6.5). Paths resolved lazily at call time via `_resolve_seal_home()`/`_resolve_hermes_home()` with `SEAL_HOME`/`HERMES_HOME` env overrides — no hardcoded `Path.home()` at import time (L-006). Audit-log line counting (`_archive_audit`, status report) uses a `with open(...)` context manager (no FD leak) and logs `logger.warning(..., exc_info=True)` on read failure instead of silently swallowing (t_226c651b) | `test_graceful_degradation.py` (20) |
 
 ### Advanced (Phase 9)
 | Module | LOC | Provides | Tests |
@@ -234,7 +234,7 @@ Nonce check           in-memory    SQLite, <1ms
 | P6.2 | End-to-end test with real tools | Full chain: prompt → VPE sign → Hermes receives → VPE verify → scope check → EPD scan → tool call → response → VPE sign response. Test with `read_file`, `terminal`, `web_search`. |
 | P6.3 | Graceful degradation | Unsigned prompts still work: logged as "unverified" with warning. Expired envelopes: logged, prompt still executed (configurable strict/lenient mode). Invalid signatures: rejected with clear error. |
 | P6.4 | Division audit trail | Every VPE verification result stored in Division memory as episode: envelope hash, issuer, result (valid/invalid/expired), timestamp. Queryable: "show me all rejected prompts in the last hour." Hardened (L-010, `t_3035a8b3`): audit hashing no longer swallows all exceptions — canonicalization failure now logs a warning, marks the record `hash_computation_failed`, and emits a `degraded:`-prefixed identifier instead of a hash silently aliased to the nonce. The degraded fallback is retained-and-flagged, not removed; its failure branch is not yet covered by a test. |
-| P6.5 | Rollback procedure | Disable VPE middleware with single config toggle. Script to roll back all VPE-related changes to Hermes config. No data loss on rollback — audit trail preserved. Hardened (L-006, `t_9da24d09`): `~/.seal` and `~/.hermes` paths are resolved lazily at call time (`_resolve_seal_home()`/`_resolve_hermes_home()`) instead of hardcoded `Path.home()` constants at import time, with `SEAL_HOME`/`HERMES_HOME` env overrides for testability and non-default homes. |
+| P6.5 | Rollback procedure | Disable VPE middleware with single config toggle. Script to roll back all VPE-related changes to Hermes config. No data loss on rollback — audit trail preserved. Hardened (L-006, `t_9da24d09`): `~/.seal` and `~/.hermes` paths are resolved lazily at call time (`_resolve_seal_home()`/`_resolve_hermes_home()`) instead of hardcoded `Path.home()` constants at import time, with `SEAL_HOME`/`HERMES_HOME` env overrides for testability and non-default homes. Further hardened (t_226c651b): the audit-log line count in `_archive_audit` and the status report now runs inside a `with open(...)` block (closes the descriptor even on error) and logs a warning with `exc_info=True` on read failure instead of silently swallowing it (`count = 0` fallback). |
 
 ### Middleware Flow
 ```
@@ -251,7 +251,7 @@ Incoming prompt (raw or VPE-enveloped)
 
 ## Phase 7 — Adversarial Testing ✅ Implemented
 
-> Mutation fuzzer (`epd/fuzzer.py`, `seal fuzz`), cryptographic-bypass + scope-escalation suites (`test_crypto_bypass.py`, 54 tests), and the P7.4 LLM-bypass finding (→ `llm_scan_all`) are done. The **T11 Unicode-smuggling** defense is the latest adversarial hardening (see [Threat Model](docs/threat-model.md)).
+> Mutation fuzzer (`epd/fuzzer.py`, `seal fuzz`), cryptographic-bypass + scope-escalation suites (`test_crypto_bypass.py`, 54 tests), and the P7.4 LLM-bypass finding (→ `llm_scan_all`) are done. The **T11 Unicode-smuggling** defense is the latest adversarial hardening (see [Threat Model](docs/threat-model.md)). The fuzzer's mutation-strategy and composite-mutation loops were also de-silenced (t_ed914b66 / t_0b226fe3): a strategy that raises now emits a `logger.warning` naming the strategy + template before continuing, rather than discarding the failure — so a broken strategy is visible instead of quietly shrinking the corpus.
 
 **Goal:** Break VPE before someone else does.
 
