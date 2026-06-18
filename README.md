@@ -128,8 +128,6 @@ Phase 1-4 complete. [Full architecture & roadmap](ARCHITECTURE.md).
 
 ## Implementations
 
-> **Python is the only implementation available today.** TypeScript/Node.js, Go, and Rust ports are planned (Phase 8 roadmap) but **do not yet exist** — no packages have been published to npm, pkg.go.dev, or crates.io. Do not attempt to install the packages below; they will 404.
-
 ### Python (available now)
 
 ```bash
@@ -140,65 +138,61 @@ See [Quickstart](#quickstart) and [As a library](#as-a-library) above for usage.
 
 ---
 
-### Planned / Roadmap — not yet available
+### Go (available now)
 
-The following ports are on the roadmap for Phase 8. They are listed here as design targets so contributors know the intended API shape. **None are installable today.**
+```bash
+cd vpe-go/
+go test ./vpe/...
+```
 
-#### TypeScript/Node.js (planned)
+```go
+import "github.com/seal/vpe-go/vpe"
+
+priv, pub, _ := vpe.GenerateKeyPair()
+env, _ := vpe.VpeSign("prompt", nil, "user:rez", "agent:hermes",
+    "", 300, "", nil, priv, false)
+result := vpe.VpeVerify(env, pub, nil, 0, 0, nil)
+// result.Valid == true
+```
+
+---
+
+### Rust (available now)
+
+```bash
+cd vpe-rust/
+cargo test
+```
+
+```rust
+use vpe_rust::{vpe_sign, vpe_verify, generate_key_pair};
+
+let kp = generate_key_pair();
+let env = vpe_sign("prompt", None, "", "", "", 300, None, None, &kp.private_key, false);
+let result = vpe_verify(&env, &kp.public_key, None, 0, 0, None);
+// result.valid == true
+```
+
+---
+
+### TypeScript/Node.js (planned)
 
 ```bash
 # NOT YET PUBLISHED — will 404
 npm install seal-vpe
-
-# Planned API (subject to change):
-import { vpeSign, vpeVerify, generateKeyPair } from 'seal-vpe';
-
-const keys = generateKeyPair();
-const envelope = vpeSign("prompt", { allowed_tools: ["search"], max_tokens: 1000, max_cost: 0.01, allowed_domains: [] }, "user:rez", "agent:hermes", "", 300, null, null, { privateKey: keys.privateKey });
-const result = vpeVerify(envelope, keys.publicKey);
-// { valid: true, reason: "ok" }
 ```
 
-#### Go (planned)
+---
 
-```bash
-# NOT YET PUBLISHED — will 404
-go get github.com/seal/vpe-go/vpe
+### Cross-language verification
 
-# Planned API (subject to change):
-import "github.com/seal/vpe-go/vpe"
+All ports use the same canonical JSON serialization and Ed25519 signing. Envelopes signed in any language can be verified by any other language:
 
-kp, _ := vpe.GenerateKeyPair()
-env, _ := vpe.VpeSign("prompt", scope, "user:rez", "agent:hermes", "", 300, "", nil, &vpe.SignOptions{PrivateKey: kp.PrivateKey})
-result := vpe.VpeVerify(env, kp.PublicKey)
-// result.Valid == true
-```
-
-#### Rust (planned)
-
-```bash
-# NOT YET PUBLISHED — will 404
-cargo add vpe-rust
-
-# Planned API (subject to change):
-use vpe_rust::{vpe_sign, vpe_verify, generate_key_pair};
-
-let kp = generate_key_pair();
-let env = vpe_sign("prompt", Some(scope), "user:rez", "agent:hermes", "", 300, None, None, &kp.private_key);
-let result = vpe_verify(&env, &kp.public_key);
-// result.valid == true
-```
-
-#### Cross-language verification (planned)
-
-Once all ports exist, any language will be able to verify envelopes signed by any other language — the canonical JSON serialization and Ed25519 signing will be identical across implementations. This cross-language interoperability is a design goal, not a current capability.
-
-```
-[PLANNED — not yet implemented]
-Sign in Python  → Verify in TypeScript
-Sign in Go      → Verify in Python
-Sign in Rust    → Verify in Go
-Sign in TS      → Verify in Rust
+```text
+Sign in Python  → Verify in Go / Rust
+Sign in Go      → Verify in Python / Rust
+Sign in Rust    → Verify in Python / Go
+Sign in TS      → planned
 ```
 
 ## Security Notes / Known Limitations
