@@ -1,0 +1,15 @@
+[package]
+name = "vpe-rust"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ed25519-dalek = { version = "2", features = ["std"] }
+sha2 = "0.10"
+rand = "0.8"
+hmac = "0.12"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+base64 = "0.22"
+subtle = "2"
