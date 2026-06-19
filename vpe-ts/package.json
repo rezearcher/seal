@@ -1,0 +1,35 @@
+{
+  "name": "seal-vpe",
+  "version": "1.0.0",
+  "description": "VPE (Verified Prompt Envelope) TypeScript port — Ed25519 and HMAC signing/verification",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "prepare": "tsc"
+  },
+  "keywords": [
+    "vpe",
+    "cryptography",
+    "ed25519",
+    "hmac",
+    "signing",
+    "prompt-envelope"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "tweetnacl": "^1.0.3"
+  }
+}
