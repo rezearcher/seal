@@ -42,7 +42,7 @@ def _make_sign_params(
     issuer: str = "",
     audience: str = "",
     doc_sha256: str = "",
-    ttl_seconds: int = 300,
+    ttl_seconds: int = 31536000,  # 1 year — vectors must survive in repo beyond 5 minutes
     nonce: str = FIXED_NONCE,
     counter: int | None = None,
     cert_chain: list | None = None,
