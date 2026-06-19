@@ -175,11 +175,21 @@ let result = vpe_verify(&env, &kp.public_key, None, 0, 0, None);
 
 ---
 
-### TypeScript/Node.js (planned)
+### TypeScript/Node.js (available now)
 
 ```bash
-# NOT YET PUBLISHED — will 404
-npm install seal-vpe
+cd vpe-ts/
+npm install
+npm test
+```
+
+```typescript
+import { generateKeyPair, vpeSign, vpeVerify } from './src/index';
+
+const kp = generateKeyPair();
+const env = vpeSign('prompt', { privateKey: kp.privateKey });
+const result = vpeVerify(env, { publicKey: kp.publicKey });
+// result.valid == true
 ```
 
 ---
@@ -189,10 +199,10 @@ npm install seal-vpe
 All ports use the same canonical JSON serialization and Ed25519 signing. Envelopes signed in any language can be verified by any other language:
 
 ```text
-Sign in Python  → Verify in Go / Rust
-Sign in Go      → Verify in Python / Rust
-Sign in Rust    → Verify in Python / Go
-Sign in TS      → planned
+Sign in Python  → Verify in Go / Rust / TypeScript
+Sign in Go      → Verify in Python / Rust / TypeScript
+Sign in Rust    → Verify in Python / Go / TypeScript
+Sign in TS      → Verify in Python / Go / Rust
 ```
 
 ## Security Notes / Known Limitations

@@ -1,7 +1,7 @@
 # Seal — Verified Prompt Envelope Protocol & AI Agent Security
 
 > **Status:** Phases 1–9 core capabilities **implemented and tested** — VPE Core (Ed25519 + HMAC + multi-sig + hierarchical cert chains + hardware signing), EPD Scanner (regex + LLM + Unicode-smuggling defense), Secrets Broker, persistent stores, full key lifecycle + rotation daemon, Hermes/Division integration, rollback, adversarial fuzzer, and benchmarks. **659 tests collected.**
-> **Remaining:** external adoption only — P8 (cross-language ports, OWASP/MCP standardization) and P10 (production-bake). See per-phase status tags below.
+> **Remaining:** external adoption only — P8 (cross-language port **publishing** + OWASP/MCP standardization) and P10 (production-bake). Cross-language ports (TS/Go/Rust) are now **implemented in-repo with their own test suites** (`vpe-ts/`, `vpe-go/`, `vpe-rust/`, P8.5a, commits `f3b9f61`/`c8f1ae4`/`bb9896c`) but are **not yet published to package registries**. See per-phase status tags below.
 > **Board:** seal
 > **Assignee profile:** default (Claude Code via Max plan)
 > **Foreman cadence:** 3x/day (4am/noon/8pm)
@@ -189,7 +189,7 @@ A verified prompt is a JSON wrapper with Ed25519 signature:
 - **Private keys unencrypted at rest:** `seal/key_manager.py` stores private keys raw (unencrypted) in the SQLite registry at `~/.seal/keys.db`. The module docstring acknowledges this: "encryption-at-rest is future work." Protect the file with restrictive filesystem permissions (`chmod 600`) until encryption-at-rest lands.
 - **TTL enforcement requires `iat`:** In both `seal/core.py` and `seal/vpe.py`, TTL expiry is only enforced when the `iat`/`issued_at` field is present in the envelope. When `iat` is absent (backward-compat envelopes), TTL is silently skipped. Envelopes produced by `vpe_sign` always include `iat`.
 - **Two credential store paths — only one is encrypted:** `seal/credential_store.py` (`seal.credential_store.CredentialStore`) is Fernet-encrypted at rest and is the current recommended implementation. `seal/secrets_broker.py` contains a legacy `CredentialStore` that writes credentials as **plaintext JSON** to `~/.hermes/secrets.json`; it is deprecated and emits a `DeprecationWarning` on import. Use `seal.broker` and `seal.credential_store` for all new integrations.
-- **Cross-language ports not yet available (P8.5):** TypeScript, Go, and Rust ports are planned but not published. See the Phase 8 section below.
+- **Cross-language ports implemented in-repo, not published (P8.5a):** TypeScript (`vpe-ts/src/index.ts`, 617 LOC), Go (`vpe-go/vpe/`, ~778 LOC), and Rust (`vpe-rust/src/`, ~929 LOC) ports exist and each ships its own test suite (TS 114 cases, Go 39 test funcs, Rust 33 `#[test]`). All three expose API parity with the Python reference: `generateKeyPair`, `vpeSign`/`vpeVerify` (Ed25519), `vpeSignHmac`/`vpeVerifyHmac`, and canonical-JSON serialization. **Not yet published** to npm/crates.io/Go module registry — `npm install seal-vpe`, `cargo add vpe-rust`, `go get github.com/seal/vpe-go/vpe` will 404. **Gap — no shared cross-language test-vector fixture:** each port's tests *hand-mirror* the Python suite (e.g. `vpe-ts/tests/core.test.ts` header: "Mirrors the Python test suite at …/tests/test_core.py"); there is no committed common vector file nor an automated Python↔port interop check, so byte-for-byte cross-language verification is asserted by spec, not yet proven by a running test. See the Phase 8 section below.
 
 ---
 
@@ -278,7 +278,7 @@ VPE bypass rate         0% (no cryptographic bypasses)
 
 ## Phase 8 — Standards & Community 🟡 Partial
 
-> Proposals drafted (`proposals/`: OWASP, MCP extension, SEP), docs site + CI + PyPI packaging in place, CFP drafts written (`seal-community/`). **External-dependent / not done:** cross-language ports (P8.5 — TS/Go/Rust), and actual OWASP/MCP acceptance.
+> Proposals drafted (`proposals/`: OWASP, MCP extension, SEP), docs site + CI + PyPI packaging in place, CFP drafts written (`seal-community/`). **Shipped since (P8.5a):** cross-language ports — TS/Go/Rust — implemented in-repo with per-port test suites (not yet published to registries; no shared cross-language vector suite). **External-dependent / not done:** registry publishing of the ports, and actual OWASP/MCP acceptance.
 
 **Goal:** VPE becomes an industry reference — not just a local tool.
 
@@ -290,7 +290,7 @@ VPE bypass rate         0% (no cryptographic bypasses)
 | P8.2 | Draft MCP spec extension | Formal MCP spec extension proposal. Define: `vpe` field in MCP messages, key exchange mechanism, verification error codes. Submit as PR to MCP spec repo or IETF draft. |
 | P8.3 | Open source release | Clean GitHub repo: README, LICENSE, CONTRIBUTING, issue templates, CI pipeline (GitHub Actions for tests + benchmarks). PyPI package: `pip install seal-vpe`. |
 | P8.4 | Documentation site | Hosted docs (GitHub Pages or similar): protocol spec, API reference, integration guide, CLI reference, threat model. Quickstart: "Add VPE to your agent in 5 minutes." |
-| P8.5 | Reference implementations (**⬜ NOT YET STARTED** — no packages published) | Port VPE to: TypeScript/Node.js, Go, Rust. Each must pass the same test vector suite (cross-language verification). Python implementation remains the canonical spec. `npm install seal-vpe`, `go get github.com/seal/vpe-go/vpe`, and `cargo add vpe-rust` will all 404 until this ships. |
+| P8.5 | Reference implementations (**🟡 IMPLEMENTED IN-REPO, NOT PUBLISHED** — P8.5a) | TS/Go/Rust ports built and committed (`vpe-ts/`, `vpe-go/`, `vpe-rust/`) with API parity (`vpeSign`/`vpeVerify` Ed25519, `vpeSignHmac`/`vpeVerifyHmac`, canonical JSON) and per-port test suites (TS 114, Go 39, Rust 33). Python remains the canonical spec. **Still open:** (a) the "same test vector suite (cross-language verification)" acceptance criterion is **not met** — ports hand-mirror the Python suite, there is no shared vector fixture nor automated Python↔port interop test; (b) packages unpublished, so `npm install seal-vpe`, `go get github.com/seal/vpe-go/vpe`, and `cargo add vpe-rust` still 404. Test pass-counts in commit messages were **not independently re-run** during this doc sync (toolchain sandboxed). |
 | P8.6 | Community engagement | Blog post: "Why your AI agent needs cryptographic prompt verification." Conference talk CFP submissions (AI security conferences, OWASP events, Rust/NYC, etc.). Discussion with Hermes upstream for native support. |
 
 ### Standards Timeline
@@ -345,7 +345,7 @@ Root Key (offline, in vault)
 - **EPD scanner** catches 95%+ of injection attempts before they reach the LLM
 - **Secrets Broker** keeps credentials out of model context entirely
 - **Multiple trust models**: HMAC (internal), Ed25519 (public), multi-sig (high-security)
-- **Cross-framework**: TypeScript/Go/Rust ports interoperate with Python reference
+- **Cross-framework**: TypeScript/Go/Rust ports exist with API parity to the Python reference (P8.5a). *Interoperability (byte-for-byte cross-language verification) is the design intent but is not yet proven — there is no shared test-vector fixture or automated interop test; see Known Limitations.*
 
 ### When to Stop
 Seal is "done" when:
