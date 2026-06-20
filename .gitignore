@@ -16,6 +16,10 @@ __pycache__/
 build/
 dist/
 
+# Rust (vpe-rust) / Node (vpe-ts) build + dependency artifacts — regenerable, never commit
+target/
+node_modules/
+
 # Virtual environments
 .venv/
 venv/
