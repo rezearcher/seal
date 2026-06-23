@@ -36,6 +36,14 @@ class CredentialStoreError(Exception):
     """Raised for invalid labels or unreadable/corrupt stores."""
 
 
+class CredentialStoreCorruptedError(CredentialStoreError):
+    """Alias for :exc:`CredentialStoreError` raised on corrupt or unreadable stores.
+
+    Retained for compatibility with code that was migrated from the legacy
+    ``seal.secrets_broker.CredentialStoreCorruptedError``.
+    """
+
+
 def _ensure_seal_dir(path: Path) -> None:
     """Create the parent directory (and ~/.seal) with 0700 perms."""
     parent = path.expanduser().resolve().parent
@@ -133,7 +141,12 @@ class CredentialStore:
         try:
             plaintext = self._fernet.decrypt(ciphertext)
         except InvalidToken as exc:
-            raise CredentialStoreError(
+            logger.warning(
+                "Credential store corrupt at %s: %s. Raising CredentialStoreCorruptedError.",
+                self.path,
+                exc,
+            )
+            raise CredentialStoreCorruptedError(
                 f"cannot decrypt {self.path}: wrong key or corrupt file"
             ) from exc
         self._data = self._deserialize(plaintext)
