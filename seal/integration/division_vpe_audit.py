@@ -194,7 +194,11 @@ class DivisionVPEAudit:
                     "envelope_hash": envelope_hash,
                 })
             except Exception:
-                pass
+                logger.warning(
+                    "VPE audit: cross-reference append failed for audit_id=%s, episode_id=%s",
+                    audit_id,
+                    episode_id,
+                )
 
         return audit_id
 
