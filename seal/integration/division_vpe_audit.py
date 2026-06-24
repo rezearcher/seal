@@ -226,12 +226,23 @@ class DivisionVPEAudit:
         try:
             canonical = str(_canonical_envelope(envelope))
             env_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-        except Exception:
-            env_hash = envelope.get("nonce", envelope.get("signature", ""))[:16]
+        except (TypeError, ValueError, KeyError):
+            env_hash = "degraded:" + envelope.get("nonce", "unknown")[:16]
+            logger.warning(
+                "DivisionVPE: envelope canonicalization failed for issuer='%s' — "
+                "using degraded hash '%s'",
+                envelope.get("issuer", "unknown"),
+                env_hash,
+            )
 
         issuer = envelope.get("issuer", "unknown")
         result = "valid" if result_obj.valid else "invalid"
         reason = result_obj.reason if hasattr(result_obj, "reason") else ""
+
+        # On degraded hash, mark reason as hash_computation_failed
+        # unless result_obj already provided one
+        if env_hash.startswith("degraded:") and not reason:
+            reason = "hash_computation_failed"
 
         return self.record(
             envelope_hash=env_hash,
