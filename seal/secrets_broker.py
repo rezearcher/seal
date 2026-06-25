@@ -16,10 +16,17 @@ Secrets Broker — Credential proxy for AI agents.
 from __future__ import annotations
 
 import logging
+import warnings
 
 from seal.credential_store import CredentialStore, CredentialStoreCorruptedError
 
 logger = logging.getLogger(__name__)
+
+warnings.warn(
+    "seal.secrets_broker is deprecated \u2014 use seal.credential_store directly",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 __all__ = [
     "CredentialStore",
