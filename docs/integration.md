@@ -6,8 +6,10 @@ This guide walks through integrating VPE into any AI agent framework.
 
 ### 1. Install Seal
 
+> **Note (2026-06-27):** `seal-vpe` is **not yet on PyPI** (returns 404), so `pip install seal-vpe` fails today. Until the PyPI publish lands (P8.3b), install from source: `pip install git+https://github.com/rezearcher/seal.git` or build a wheel locally (`uv build` → `pip install dist/seal_vpe-0.1.0-py3-none-any.whl`).
+
 ```bash
-pip install seal-vpe
+pip install seal-vpe   # NOT yet available — see note above
 ```
 
 ### 2. Generate Keys

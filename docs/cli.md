@@ -6,7 +6,7 @@
 seal <command> [options]
 ```
 
-Installation via `pip install seal-vpe` registers the `seal` CLI entry point. Run `seal --help` for available commands.
+Installing the package registers the `seal` CLI entry point (via the `[project.scripts]` entry in `pyproject.toml`). Run `seal --help` for available commands. **Note (2026-06-27):** `pip install seal-vpe` is **not yet available** — the package is not on PyPI (404). Install from source (`pip install git+https://github.com/rezearcher/seal.git`) or a locally built wheel until the PyPI publish (P8.3b) lands.
 
 ## Global Options
 
