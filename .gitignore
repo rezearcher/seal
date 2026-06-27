@@ -52,3 +52,8 @@ _import_patch.txt
 _fix_all.sh
 *_results.txt
 install_*.txt
+
+# Unrelated workspace artifacts
+ops-docs-leak-report.md
+recon/
+test
