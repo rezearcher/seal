@@ -3,7 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("seal")
+    __version__ = version("seal-vpe")
 except PackageNotFoundError:
     __version__ = "0.1.0"
 

@@ -38,10 +38,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/nousresearch/seal"
-Repository = "https://github.com/nousresearch/seal"
-Documentation = "https://github.com/nousresearch/seal#readme"
-Changelog = "https://github.com/nousresearch/seal/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/rezearcher/seal"
+Repository = "https://github.com/rezearcher/seal"
+Documentation = "https://github.com/rezearcher/seal#readme"
+Changelog = "https://github.com/rezearcher/seal/blob/main/CHANGELOG.md"
 
 [project.scripts]
 seal = "seal.cli:main"
