@@ -131,7 +131,8 @@ Phase 1-4 complete. [Full architecture & roadmap](ARCHITECTURE.md).
 ### Python (available now)
 
 ```bash
-pip install seal-vpe
+# Not yet on PyPI — `pip install seal-vpe` is planned, not live. Install from source:
+pip install git+https://github.com/rezearcher/seal.git
 ```
 
 See [Quickstart](#quickstart) and [As a library](#as-a-library) above for usage.
