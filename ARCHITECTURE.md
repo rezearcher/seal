@@ -1,369 +1,370 @@
-# Seal — Verified Prompt Envelope Protocol & AI Agent Security
-
-> **Status:** Phases 1–9 core capabilities **implemented and tested** — VPE Core (Ed25519 + HMAC + multi-sig + hierarchical cert chains + hardware signing), EPD Scanner (regex + LLM + Unicode-smuggling defense), Secrets Broker, persistent stores, full key lifecycle + rotation daemon, Hermes/Division integration, rollback, adversarial fuzzer, and benchmarks. **684 tests collected.**
-> **Remaining:** external adoption only — P8 (cross-language port **publishing** + OWASP/MCP standardization) and P10 (production-bake). Cross-language ports (TS/Go/Rust) are **implemented in-repo with their own test suites** (`vpe-ts/`, `vpe-go/`, `vpe-rust/`, P8.5a, commits `bb9896c` + later) AND now share a **single canonical cross-language test-vector fixture** (`tests/vectors/vpe_vectors.json`, 22 vectors, generated from the Python reference) consumed by an automated interop test in all four languages (commits `f7c2af4` fixture+tests, `e50ce42`/`f575146` TTL fix). The ports are **not yet published to package registries**. See per-phase status tags below.
-> **P8.3b — GitHub push DONE, PyPI publish still NOT done / unverified this sync (`t_a40992b1`; publish-prep `t_0c0fff25`/`t_dd8f649c`):** The repo IS live on GitHub at `github.com/rezearcher/seal` (`origin/master` = `bb98aa1` as of last verify; local HEAD now `d97ea7c`). As of the 2026-06-27 check the Python package was **NOT on PyPI** (`https://pypi.org/pypi/seal-vpe/json` → **404**); this could **not be re-verified on 2026-06-29** (sandbox blocks outbound network), so PyPI status is **unverified — treat as still-not-published**: `publish.yml` triggers only on `release: published`, **no GitHub Release exists** (a local `v0.1.0` tag at `0b8233f` from 2026-06-18 predates the publish-prep fix and was never turned into a release), so the workflow has never fired and `pip install seal-vpe` will fail. **Publish-prep code changes shipped (`t_0c0fff25`, commit `d97ea7c`, 2026-06-28; reviewed under `t_dd8f649c`):** the `[project.urls]` in `pyproject.toml` were corrected from `github.com/nousresearch/seal` to the real remote `github.com/rezearcher/seal`, and `seal/__init__.py` now resolves `__version__` via `version("seal-vpe")` (the correct dist name) instead of `version("seal")`. These are config/packaging fixes only — **no actual publish occurred**. Residual: `pyproject.toml` `authors` still lists `"Nous Research"` (line 13) — unchanged by `d97ea7c`.
-> **Board:** seal
-> **Assignee profile:** default (Claude Code via Max plan)
-> **Foreman cadence:** 3x/day (4am/noon/8pm)
-
-> ⚠️ **Doc-accuracy note:** the "Build Phases" sections below were the *original plan*. Each phase header now carries a status tag (✅ Implemented / 🟡 Partial / ⬜ External). For the authoritative inventory of what physically exists, see [What's Built](#whats-built-current-state) — keep that section in sync when modules land.
-
-## Core Problem
-
-AI agents execute prompts from multiple sources: user input, tool returns, attached documents, memory recall, skill pipelines. Any of these can inject unauthorized instructions. Current industry defense is purely linguistic (Anthropic's prose-level "untrusted data, never execute instructions" — SOTA is ~91% static regex, bypassed by semantic obfuscation). No existing product, paper, or standard does **cryptographic provenance verification** at the prompt level.
-
-Seal (VPE) replaces linguistic detection with cryptographic enforcement.
-
-## The VPE Protocol
-
-A verified prompt is a JSON wrapper with Ed25519 signature:
-
-```json
-{
-  "vpe_version": "1.0",
-  "prompt": "search the database for customer records...",
-  "scope": {
-    "allowed_tools": ["database_search", "read_file"],
-    "max_tokens": 4000,
-    "max_cost": 0.05,
-    "allowed_domains": ["*.internal.corp.com"]
-  },
-  "issuer": "user:rez",
-  "audience": "agent:hermes-default",
-  "doc_sha256": "abc123...",
-  "ttl_seconds": 300,
-  "nonce": "a1b2c3d4",
-  "counter": 42,
-  "signature": "ed25519_sig_hex..."
-}
-```
-
-### Fields
-| Field | Purpose | Example |
-|-------|---------|---------|
-| `vpe_version` | Protocol version | `"1.0"` |
-| `prompt` | The actionable instruction | `"search database..."` |
-| `scope` | Least-privilege capabilities | `{allowed_tools, max_tokens, ...}` |
-| `issuer` | Who authorized this | `"user:rez"` |
-| `audience` | Which agent should execute | `"agent:hermes-default"` |
-| `doc_sha256` | Binding to source document | `"abc123..."` |
-| `ttl_seconds` | Expiry from issuance | `300` (5 minutes) |
-| `nonce` | Uniqueness (replay prevention) | `"a1b2c3d4"` |
-| `counter` | Monotonic — detect skipped prompts | `42` |
-| `signature` | Ed25519 over all prior fields | hex string |
-
-## Three Sub-Systems
-
-### 1. VPE Core (sign + verify)
-- Ed25519 key pair generation
-- `vpe_sign(prompt, scope, issuer, audience, ...) → signed_envelope`
-- `vpe_verify(signed_envelope) → {valid: bool, reason: str}`
-- Python reference implementation with no dependencies beyond `cryptography` or `nacl`
-
-### 2. EPD (Embedded Prompt Detection)
-- Pre-LLM scanner that runs inside the VPE verification gate
-- Detects: jailbreak patterns, role-switching, "ignore previous instructions", hidden instructions in attached docs
-- Regex first-pass (~91% catch rate), LLM classification pass for suspicious-but-ambiguous
-- Outputs: `{clean: bool, flags: [pattern_name, confidence, location]}`
-
-### 3. Secrets Broker
-- Credential proxy that never lets API keys/tokens enter model context
-- Agents request secrets by label (`"tastytrade_sandbox"`) — broker injects directly into tool calls
-- Keeps keys out of prompt history, log files, and training data
-
-## Build Phases
-
-### Phase 1 — VPE Spec & Reference Implementation
-- Write formal protocol spec (this doc → v1.0 spec)
-- Python implementation: sign + verify with Ed25519
-- CLI tool: `seal sign <prompt> --scope ... --issuer ...`
-- CLI tool: `seal verify <envelope>`
-- Unit tests: signing, verification, tamper detection, TTL expiry, replay prevention
-
-### Phase 2 — EPD Scanner
-- Regex patterns for known injection vectors
-- LLM fallback for semantic obfuscation
-- Integration with VPE verification gate
-- Test suite: clean prompts, known injection patterns, edge cases
-
-### Phase 3 — Secrets Broker
-- Credential store (key-value, file-backed or env-based)
-- Proxy pattern for tool calls
-- Audit log of credential access
-- Integration test: agent tool calls broker, not context
-
-### Phase 4 — Hermes/Division Integration
-- MCP middleware layer: every tool call wrapped in VPE
-- Division memory episode signing
-- Proposal as OWASP Agentic Security control category
-- Proposal as MCP spec extension (signing layer)
-
-## What Already Exists (Rez's prior work)
-- **Membrane** (Night Agent): Ed25519 Tickets per-action, chained Receipts — action-level, VPE is prompt-level, complementary
-- **TRUSTBAC**: RBAC+ABAC+ReBAC+RAdAC authorization framework — VPE is prompt authentication, complementary
-- **Division injection scanning gap**: write-time scanning identified but not implemented (low effort, high impact)
-- **Hermes skills guard**: 120+ regex patterns — reactive, no crypto
-
-## Industry Gap Analysis
-| Domain | What Exists | Seal's Addition |
-|--------|-------------|-----------------|
-| Injection detection | Guardrails AI, NeMo, Rebuff, Lakera | Cryptographic provenance, not just content filtering |
-| Prompt security products | All content-based | None do signed execution |
-| OWASP LLM Top 10 | Identifies injection as #1 risk | No crypto mitigations proposed |
-| MCP spec | Protocol for tools/lifecycle | No auth, no scope, no replay protection |
-| IETF | No standards for prompt security | Could be an IETF draft |
-
-## Key Constraints
-- Zero external runtime dependencies (stdlib + cryptography lib only)
-- All operations must be verifiable offline (no SaaS dependency)
-- VPE must be backwards-compatible — unsigned prompts still work (logged as "unverified")
-- Secrets Broker must be opt-in — agents can run without it
-- EPD false positive rate < 5% on benign prompts
-
----
-
-<a id="whats-built-current-state"></a>
-## What's Built (current state)
-
-> Authoritative inventory of modules that physically exist, with the test file that exercises each. **684 tests collected.** Keep this table current when modules land — it is the anti-confusion anchor for the roadmap below.
-
-### VPE Core — signing & verification (Phase 1, plus 5.4 / 9.1 / 9.3 / 9.4)
-| Module | LOC | Provides | Tests |
-|--------|-----|----------|-------|
-| `seal/core.py` | 1229 | `vpe_sign`/`vpe_verify` (Ed25519), `vpe_sign_hmac`/`vpe_verify_hmac` (HMAC-SHA256, P5.4), `vpe_sign_multi`/`vpe_verify_multi` (N-of-M multi-sig, P9.3), `verify_certificate`/`verify_cert_chain` (hierarchical issuer chains, P9.1), `vpe_sign_hardware`/`vpe_verify_hardware` (P9.4), scope/nonce/counter/TTL enforcement | `test_core.py` (146), `test_crypto_bypass.py` (54) |
-| `seal/vpe.py` | 589 | Envelope dataclasses, canonical JSON, multi-backend Ed25519 (NaCl or `cryptography`) | `test_core.py` |
-| `seal/cli.py` | 649 | 18-command CLI (see below) | e2e |
-
-### EPD Scanner — injection detection (Phase 2, plus 7.1 / 7.4)
-| Module | LOC | Provides | Tests |
-|--------|-----|----------|-------|
-| `seal/epd/scanner.py` | 349 | Two-pass scan (regex ~91% + optional LLM). Normalization strips **all** Unicode format chars (Cf) + variation selectors; `_detect_hidden_unicode()` flags/decodes invisible **tag-block & variation-selector smuggling** (threat-model **T11**), runs unconditionally | `test_epd.py` (57) |
-| `seal/epd/patterns.py` | 615 | Regex patterns: jailbreaks, role-switch, ignore-instructions, delimiter confusion, hidden markers, tool hallucination, homoglyph/leet | — |
-| `seal/epd/llm_classifier.py` | 145 | LLM tiebreaker / `llm_scan_all` catch-all pass (independent model) | `test_epd.py` |
-| `seal/epd/fuzzer.py` | 960 | Pattern-mutation fuzzer, `seal fuzz` (P7.1 adversarial). Mutation-strategy + composite loops log a `logger.warning` on per-strategy failure rather than silently `continue` (t_ed914b66 / t_0b226fe3, e29288d) | `test_epd.py` |
-| `seal/epd/{config,models}.py` | 147 | `EPDConfig`, `EPDFlag`, `EPDResult` | `test_epd.py` |
-
-### Secrets Broker — credentials out of context (Phase 3)
-| Module | LOC | Provides | Tests |
-|--------|-----|----------|-------|
-| `seal/broker.py` | 91 | `{SECRET:label}` placeholder resolution into tool calls, deep-copy + `redact()` | `test_broker.py` (12) |
-| `seal/secrets_broker.py` | 34 | Back-compat shim — re-exports `CredentialStore` / `CredentialStoreCorruptedError` from `seal.credential_store` (legacy plaintext store deleted, P3.3a / `t_84148f82`). **Now emits `DeprecationWarning` at import time** (t_fc67351b, commit `1971948`). | `test_secrets_broker.py` (migrated to encrypted store) |
-| `seal/credential_store.py` | 207 | File store, **Fernet-encrypted at rest** | `test_credential_store.py` (11) |
-| `seal/audit.py` | 234 | Append-only JSONL access audit (records access, never values) | `test_audit.py` (12) |
-
-### Key lifecycle & persistence (Phase 5)
-| Module | LOC | Provides | Tests |
-|--------|-----|----------|-------|
-| `seal/store.py` | 247 | SQLite (WAL) `NonceStore` + `CounterStore`, expiry cleanup (P5.2) | `test_store.py` (32) |
-| `seal/key_manager.py` / `seal/key_store.py` | 920 | SQLite key registry: generated→active→expiring→retired→revoked, auto-rotation guard (P5.5) | `test_key_manager.py` (37), `test_key_lifecycle.py` (27) |
-| `seal/rotator.py` | 43 | Rotation daemon — one-shot (cron) or persistent (`seal key daemon`) | (lifecycle) |
-| `benchmark_vpe_verify.py`, `benchmark_envelope_size.py` | — | P5.1 / P5.3 perf + size benchmarks | — |
-
-### Deployment & integration (Phases 4 / 6)
-| Module | LOC | Provides | Tests |
-|--------|-----|----------|-------|
-| `seal/integration/hermes_vpe_middleware.py` | 671 | Wraps Hermes tool calls in VPE verify + EPD scan | `test_e2e_real_tools.py` (37) |
-| `seal/integration/hermes_skills_guard.py` | 316 | VPE/EPD-backed skills guard | `test_e2e_real_tools.py` |
-| `seal/integration/division_vpe_signer.py` | 522 | Sign Division episodes | `test_division_audit.py` (13) |
-| `seal/integration/division_vpe_audit.py` | 481 | Store/query VPE results in Division memory (P6.4). L-006/007 hardened (t_55865f62, t_373d679c): canonicalization failure now logs warning + uses `degraded:` prefix; cross-reference append logs warning instead of bare `except:pass`. Gap: `_canonical_hash()` dead code still has bare `except Exception:` silent fallback. | `test_division_audit.py` |
-| `seal/division_audit.py` | 722 | Division audit-trail store + query | `test_division_audit.py` |
-| `seal/rollback.py` | 508 | One-toggle disable + full config rollback, audit preserved (P6.5). Paths resolved lazily at call time via `_resolve_seal_home()`/`_resolve_hermes_home()` with `SEAL_HOME`/`HERMES_HOME` env overrides — no hardcoded `Path.home()` at import time (L-006). Audit-log line counting (`_archive_audit`, status report) uses a `with open(...)` context manager (no FD leak) and logs `logger.warning(..., exc_info=True)` on read failure instead of silently swallowing (t_226c651b) | `test_graceful_degradation.py` (20) |
-
-### Advanced (Phase 9)
-| Module | LOC | Provides | Tests |
-|--------|-----|----------|-------|
-| `seal/hardware.py` | 706 | HSM abstraction — YubiKey/TPM/Secure Enclave signing, key never leaves device (P9.4) | `test_hardware.py` (27) |
-| `seal/federation.py` | 699 | Cross-agent trust anchors, federated audit (P9.5) | `test_federation.py` (32) |
-
-### Cross-language ports & interop (Phase 8.5a)
-- **Ports:** `vpe-ts/` (TS, 617 LOC, 114 tests), `vpe-go/vpe/` (~778 LOC, 39 test funcs), `vpe-rust/src/` (~929 LOC, 33 `#[test]`) — API parity with the Python reference, **not published** to npm/crates.io/Go registries.
-- **Shared interop fixture:** `tests/vectors/vpe_vectors.json` (22 vectors, valid + tampered, Ed25519 + HMAC; ttl ∈ {0, 31536000}), generated by `tests/generate_vectors.py` from the Python reference.
-- **Interop tests (one per language, same fixture):** `tests/test_interop_vectors.py`, `vpe-ts/tests/interop_vectors.test.ts`, `vpe-go/vpe/interop_vectors_test.go`, `vpe-rust/tests/interop_vectors_test.rs`. (Not re-run this sync — sandbox blocks the runners.)
-
-### Standards, packaging & docs (Phase 8, partial)
-- **`VPE_SPEC_v1.md`** (839 lines) — full protocol spec.
-- **`proposals/`** — `owasp_agentic_security_vpe.md`, `mcp_signing_extension.md`, `SEP-vpe-signing-layer.mdx`; **`seal-community/`** — conference CFP drafts.
-- **Docs site** — MkDocs (`mkdocs.yml`, `docs/` 18 pages: spec, API reference, CLI, integration, threat model, quickstart) → `docs.yml` CI deploy.
-- **CI** — `.github/workflows/`: `test.yml`, `lint.yml`, `benchmark.yml`, `publish.yml` (PyPI `seal-vpe`, trusted-publishing via `pypa/gh-action-pypi-publish`, `on: release: published`). **`publish.yml` has never fired** — no GitHub Release has been published, so `seal-vpe` is **not on PyPI** (404 as of 2026-06-27; **not re-verifiable 2026-06-29 — sandbox blocks network**, treat as still-unpublished). Repo is live at `github.com/rezearcher/seal`. Built artifacts exist locally in `dist/` (`seal_vpe-0.1.0-py3-none-any.whl`, `.tar.gz`, built 2026-06-07) but were never uploaded. Publish-prep config fixes landed in `d97ea7c` (`t_0c0fff25`): `[project.urls]` repo links corrected to `rezearcher/seal`, `__init__.py` dist name → `seal-vpe`. No publish step was run.
-- **Version reporting (FIXED, `t_0c0fff25`/`d97ea7c`):** `seal/__init__.py` now resolves `__version__` via `importlib.metadata.version("seal-vpe")` — the correct distribution name (was `version("seal")`, the wrong name, which fell back to the hard-coded `"0.1.0"`). With `seal-vpe` installed in this environment, `version("seal-vpe")` now resolves to `0.1.0` from installed metadata (verified 2026-06-29), not the fallback branch; the `except PackageNotFoundError → "0.1.0"` fallback remains for uninstalled use.
-
-### CLI surface (`seal …`)
-`genkey` · `sign` · `verify` · `secrets {add,get,list,delete}` · `audit` · `key {rotate,revoke,disable,list,daemon}` · `rollback` · `hardware` · `fuzz` · `status`
-
----
-
-## Security Notes / Known Limitations
-
-- **Private keys unencrypted at rest:** `seal/key_manager.py` stores private keys raw (unencrypted) in the SQLite registry at `~/.seal/keys.db`. The module docstring acknowledges this: "encryption-at-rest is future work." Protect the file with restrictive filesystem permissions (`chmod 600`) until encryption-at-rest lands.
-- **TTL enforcement requires `iat`:** In both `seal/core.py` and `seal/vpe.py`, TTL expiry is only enforced when the `iat`/`issued_at` field is present in the envelope. When `iat` is absent (backward-compat envelopes), TTL is silently skipped. Envelopes produced by `vpe_sign` always include `iat`.
-- **Single, encrypted credential store (legacy plaintext store removed — P3.3a, `t_84148f82`):** `seal/credential_store.py` (`seal.credential_store.CredentialStore`) is Fernet-encrypted at rest and is the only credential-store implementation. The legacy plaintext-JSON `CredentialStore` (and `AuditLog`) that previously lived in `seal/secrets_broker.py` and wrote credentials to `~/.hermes/secrets.json` have been **deleted**. `seal/secrets_broker.py` is now a 34-line back-compat shim that re-exports `CredentialStore` / `CredentialStoreCorruptedError` from `seal.credential_store`; its module docstring marks it deprecated, and it **now emits a `DeprecationWarning` at import time** (t_fc67351b, commit `1971948`). Use `seal.broker`, `seal.credential_store`, and `seal.audit` directly for all new integrations.
-- **`seal/integration/division_vpe_audit.py` — L-006 + L-007 hardened (closed t_55865f62, t_373d679c):** Two silent-failure paths in `DivisionVPEAudit` were fixed. (1) **L-006 (canonicalization fallback in `record_from_result`):** A bare `except Exception:` that silently aliased the envelope hash to a nonce fragment was replaced with `except (TypeError, ValueError, KeyError)`, adds a `degraded:` prefix, logs a `logger.warning` naming the issuer + degraded hash, and sets `reason="hash_computation_failed"` when the caller didn't supply one. (2) **L-007 (cross-reference append):** A bare `except: pass` in `record()` when appending the Division episode reference to the local log was replaced with a `logger.warning` that includes the `audit_id` and `episode_id`. (Gap: the private helper `_canonical_hash()` — defined but dead code — still has a bare `except Exception:` fallback with no logging, and the `_extract_episode_id` still has a silent `except (json.JSONDecodeError, TypeError, AttributeError): pass`.)
-- **Cross-language ports implemented in-repo, not published (P8.5a):** TypeScript (`vpe-ts/src/index.ts`, 617 LOC), Go (`vpe-go/vpe/`, ~778 LOC), and Rust (`vpe-rust/src/`, ~929 LOC) ports exist and each ships its own test suite (TS 114 cases, Go 39 test funcs, Rust 33 `#[test]`). All three expose API parity with the Python reference: `generateKeyPair`, `vpeSign`/`vpeVerify` (Ed25519), `vpeSignHmac`/`vpeVerifyHmac`, and canonical-JSON serialization. **Not yet published** to npm/crates.io/Go module registry — `npm install seal-vpe`, `cargo add vpe-rust`, `go get github.com/seal/vpe-go/vpe` will 404. **Shared cross-language test-vector fixture now committed (P8.5a, was previously a gap):** `tests/vectors/vpe_vectors.json` (22 vectors, valid + tampered, Ed25519 + HMAC) is generated from the Python reference by `tests/generate_vectors.py` and consumed by an automated interop test in **all four** languages — `tests/test_interop_vectors.py`, `vpe-ts/tests/interop_vectors.test.ts`, `vpe-go/vpe/interop_vectors_test.go`, `vpe-rust/tests/interop_vectors_test.rs` — each resolving the *same* repo-root fixture path. Byte-for-byte cross-language verification is now exercised by running tests, not just asserted by spec. (Caveat: this doc-sync could **not** re-execute the four test runners — the sandbox blocks `pytest`/`go test`/`jest`/`cargo test`; "passing" rests on commit history, where `t_253e5d8a`/`e50ce42`/`f575146` specifically fixed 4 TTL-expiry failures by bumping vector TTLs to 31536000s, not on a re-run during this sync.) See the Phase 8 section below.
-
----
-
-## Phase 5 — Performance & Production Hardening ✅ Implemented
-
-> Persistent SQLite stores (`store.py`), key lifecycle + rotation (`key_manager.py`/`key_store.py`/`rotator.py`), HMAC path (`core.vpe_*_hmac`), and benchmarks all landed and tested.
-
-**Goal:** Make VPE fast enough for real-time use and robust enough for production deployment.
-
-### Subtasks
-
-| ID | Task | Acceptance Criteria |
-|----|------|--------------------|
-| P5.1 | VPE verification benchmark | Measure overhead: `vpe_verify()` latency for envelopes of 1KB, 10KB, 100KB. Target < 5ms for 1KB, < 20ms for 100KB. Report breakdown (parsing, signature verify, scope check, nonce check, expiry check). |
-| P5.2 | Persistent nonce/counter store | SQLite-backed `NonceStore` and `CounterStore`. Survive restarts. Automatic cleanup of expired nonces (>TTL). Thread-safe. Path: `~/.seal/store.db`. |
-| P5.3 | Envelope size optimization | Canonical JSON without unnecessary whitespace. Optional field stripping (omit empty scope, omit default version). Benchmark size reduction vs. parse time. |
-| P5.4 | HMAC-SHA256 alternative | For contexts where Ed25519 is overkill (internal trust, short-lived prompts). HMAC path: `vpe_sign_hmac()`, `vpe_verify_hmac()`. No key generation needed — shared secret. Document trade-offs: faster but no non-repudiation. |
-| P5.5 | Key lifecycle management | Key generation → active → expiring → retired → revoked. Automatic rotation (generate new key N days before expiry). Graceful: old keys still verify signed envelopes, new envelopes use new key. CLI: `seal key rotate`, `seal key list`, `seal key revoke`. |
-
-### Performance Targets
-```
-Metric                Current      Target
-vpe_verify(1KB)       ~2ms         <5ms (benchmark first)
-vpe_verify(100KB)     ~15ms        <20ms
-Envelope overhead     ~500B        <300B (with optional stripping)
-Nonce check           in-memory    SQLite, <1ms
-```
-
----
-
-## Phase 6 — Hermes Production Deployment 🟡 Partial
-
-> Middleware, graceful degradation, Division audit trail (`division_audit.py`), and rollback (`rollback.py`) are built and tested. Live production wiring into a running Hermes/Division instance is deployment-dependent, not a code gap.
-
-**Goal:** VPE middleware running in production, protecting real Hermes tool calls.
-
-### Subtasks
-
-| ID | Task | Acceptance Criteria |
-|----|------|--------------------|
-| P6.1 | Wire VPE into Hermes config | VPE middleware registered as optional plugin in Hermes `config.yaml`. Enabled/disabled via config toggle. No Hermes core modifications needed — MCP middleware layer only. |
-| P6.2 | End-to-end test with real tools | Full chain: prompt → VPE sign → Hermes receives → VPE verify → scope check → EPD scan → tool call → response → VPE sign response. Test with `read_file`, `terminal`, `web_search`. |
-| P6.3 | Graceful degradation | Unsigned prompts still work: logged as "unverified" with warning. Expired envelopes: logged, prompt still executed (configurable strict/lenient mode). Invalid signatures: rejected with clear error. |
-| P6.4 | Division audit trail | Every VPE verification result stored in Division memory as episode: envelope hash, issuer, result (valid/invalid/expired), timestamp. Queryable: "show me all rejected prompts in the last hour." Hardened (L-010, `t_3035a8b3`): audit hashing no longer swallows all exceptions — canonicalization failure now logs a warning, marks the record `hash_computation_failed`, and emits a `degraded:`-prefixed identifier instead of a hash silently aliased to the nonce. The degraded fallback is retained-and-flagged, not removed; its failure branch is not yet covered by a test. Further hardened in `division_vpe_audit.py` (L-006/L-007, `t_55865f62`/`t_373d679c`): canonicalization fallback in `record_from_result` logs warning + prefixed degraded hash; cross-reference append logs warning instead of bare `except:pass`. |
-| P6.5 | Rollback procedure | Disable VPE middleware with single config toggle. Script to roll back all VPE-related changes to Hermes config. No data loss on rollback — audit trail preserved. Hardened (L-006, `t_9da24d09`): `~/.seal` and `~/.hermes` paths are resolved lazily at call time (`_resolve_seal_home()`/`_resolve_hermes_home()`) instead of hardcoded `Path.home()` constants at import time, with `SEAL_HOME`/`HERMES_HOME` env overrides for testability and non-default homes. Further hardened (t_226c651b): the audit-log line count in `_archive_audit` and the status report now runs inside a `with open(...)` block (closes the descriptor even on error) and logs a warning with `exc_info=True` on read failure instead of silently swallowing it (`count = 0` fallback). |
-
-### Middleware Flow
-```
-Incoming prompt (raw or VPE-enveloped)
-  → Detect: is this a VPE envelope or raw text?
-  → If enveloped: vpe_verify() → if invalid: log + reject (strict) or log + warn (lenient)
-  → If enveloped + valid: extract prompt + scope → pass to Hermes
-  → If raw: log as unverified → pass to Hermes (with warning)
-  → EPD scan on extracted prompt (always, regardless of envelope)
-  → On response: optionally sign response envelope
-```
-
----
-
-## Phase 7 — Adversarial Testing ✅ Implemented
-
-> Mutation fuzzer (`epd/fuzzer.py`, `seal fuzz`), cryptographic-bypass + scope-escalation suites (`test_crypto_bypass.py`, 54 tests), and the P7.4 LLM-bypass finding (→ `llm_scan_all`) are done. The **T11 Unicode-smuggling** defense is the latest adversarial hardening (see [Threat Model](docs/threat-model.md)). The fuzzer's mutation-strategy and composite-mutation loops were also de-silenced (t_ed914b66 / t_0b226fe3): a strategy that raises now emits a `logger.warning` naming the strategy + template before continuing, rather than discarding the failure — so a broken strategy is visible instead of quietly shrinking the corpus.
-
-**Goal:** Break VPE before someone else does.
-
-### Subtasks
-
-| ID | Task | Acceptance Criteria |
-|----|------|--------------------|
-| P7.1 | EPD pattern mutation fuzzing | Generate 1000+ mutations of known injection patterns (character insertion, deletion, substitution, encoding variations). Measure catch rate. Target: >95% on known patterns, >85% on novel mutations. |
-| P7.2 | VPE cryptographic bypass attempts | Test: signature replay (reuse signature from different envelope), key confusion (substitute different key), malleability (reorder JSON fields), algorithm confusion (force HMAC path when Ed25519 expected). |
-| P7.3 | Scope escalation attempts | Test: modify scope after signing, grant additional tools, extend TTL, change audience/issuer. Verify all scope modifications cause verification failure. |
-|| P7.4 | LLM-based adversarial generation | Use an LLM to generate novel injection prompts designed to bypass EPD patterns. Feed output back into EPD pattern development. **Result: 71/73 prompts (97.3%) bypassed regex — regex alone cannot catch semantic attacks. Solution: ``llm_scan_all`` config option + LLM classifier.** |
-| P7.5 | Third-party audit prep | Document attack surface, threat model, known limitations. Create security audit checklist. Reference comparable systems (JWT, PASETO, Sigstore) for comparison. |
-
-### Test Metrics
-```
-|EPD catch rate          Target      Actual (P7.4)
-|Known patterns          >95%        ~91% (regex)
-|Mutations               >85%        N/A (P7.1)
-|LLM-generated novel     >70% (stretch)  0% (regex alone, before llm_scan_all)
-VPE bypass rate         0% (no cryptographic bypasses)
-```
-
----
-
-## Phase 8 — Standards & Community 🟡 Partial
-
-> Proposals drafted (`proposals/`: OWASP, MCP extension, SEP), docs site + CI + PyPI packaging **config** in place (`pyproject.toml` + `publish.yml`), CFP drafts written (`seal-community/`). **Shipped since (P8.5a):** cross-language ports — TS/Go/Rust — implemented in-repo with per-port test suites, **plus a shared cross-language test-vector fixture** (`tests/vectors/vpe_vectors.json`, 22 vectors) with an automated interop test in all four languages (commit `f7c2af4`; TTL fix `e50ce42`/`f575146`). **Shipped since (P8.3b, `t_a40992b1`):** the open-source repo is **pushed to GitHub** at `github.com/rezearcher/seal` (verified `origin/master` = `bb98aa1`). **External-dependent / NOT done:** PyPI publish of `seal-vpe` (**404 — never uploaded**, no GitHub Release to trigger `publish.yml`), registry publishing of the ports, and actual OWASP/MCP acceptance.
-
-**Goal:** VPE becomes an industry reference — not just a local tool.
-
-### Subtasks
-
-| ID | Task | Acceptance Criteria |
-|----|------|--------------------|
-| P8.1 | Submit OWASP proposal | PR or submission to OWASP Agentic Security Top 10 repository. New control category: "Prompt Authentication & Cryptographic Verification" with VPE as reference implementation. |
-| P8.2 | Draft MCP spec extension | Formal MCP spec extension proposal. Define: `vpe` field in MCP messages, key exchange mechanism, verification error codes. Submit as PR to MCP spec repo or IETF draft. |
-| P8.3 (🟡 GitHub DONE / PyPI NOT done — P8.3b, `t_a40992b1`) | Open source release | Clean GitHub repo: README, LICENSE, CONTRIBUTING, issue templates, CI pipeline (GitHub Actions for tests + benchmarks). PyPI package: `pip install seal-vpe`. **Status (verified 2026-06-27):** repo is **live on GitHub** (`github.com/rezearcher/seal`, `origin/master` = `bb98aa1`) with README/LICENSE/CONTRIBUTING/CI all present. **PyPI publish NOT done** — `seal-vpe` returned **404** on PyPI (2026-06-27; not re-checkable 2026-06-29, network-blocked, assume still unpublished); `publish.yml` fires only on `release: published` and no GitHub Release exists, so it has never run. `pip install seal-vpe` fails today. **Publish-prep config landed** (`t_0c0fff25`/`d97ea7c`, reviewed `t_dd8f649c`): repo URLs and dist name fixed — code changes committed, **publish itself unverified/not done**. Gap to close: publish a GitHub Release (or run a manual `uv build && uv publish`) to populate PyPI. |
-| P8.4 | Documentation site | Hosted docs (GitHub Pages or similar): protocol spec, API reference, integration guide, CLI reference, threat model. Quickstart: "Add VPE to your agent in 5 minutes." |
-| P8.5 | Reference implementations (**🟡 IMPLEMENTED IN-REPO + INTEROP-WIRED, NOT PUBLISHED** — P8.5a) | TS/Go/Rust ports built and committed (`vpe-ts/`, `vpe-go/`, `vpe-rust/`) with API parity (`vpeSign`/`vpeVerify` Ed25519, `vpeSignHmac`/`vpeVerifyHmac`, canonical JSON) and per-port test suites (TS 114, Go 39, Rust 33). Python remains the canonical spec. **Now met:** the "same test vector suite (cross-language verification)" acceptance criterion — `tests/vectors/vpe_vectors.json` (22 vectors generated from the Python reference via `tests/generate_vectors.py`) is consumed by an automated interop test in all four languages, each resolving the same repo-root fixture (verified by path inspection this sync). **Still open:** packages unpublished, so `npm install seal-vpe`, `go get github.com/seal/vpe-go/vpe`, and `cargo add vpe-rust` still 404. Interop/per-port pass-counts were **not independently re-run** during this doc sync (sandbox blocks pytest/go/jest/cargo); pass-status rests on commit history, including `t_253e5d8a` which fixed 4 TTL-expiry interop failures. |
-| P8.6 | Community engagement | Blog post: "Why your AI agent needs cryptographic prompt verification." Conference talk CFP submissions (AI security conferences, OWASP events, Rust/NYC, etc.). Discussion with Hermes upstream for native support. |
-
-### Standards Timeline
-```
-Month 1: OWASP proposal submission + first reference port (TypeScript)
-Month 2: MCP spec extension draft + Go port
-Month 3: Rust port + CI + documentation site
-Month 4: Conference submissions + upstream discussions
-Month 6: v1.0 release candidate
-```
-
----
-
-## Phase 9 — Advanced Features ✅ Implemented (core)
-
-> Hierarchical issuer chains (`core.verify_cert_chain`, P9.1), key expiry/rotation (P9.2), multi-signature envelopes (`core.vpe_sign_multi`, P9.3), hardware signing (`hardware.py`, P9.4), and federation (`federation.py`, P9.5) are all built and tested. Trust-anchor discovery via DNS/DID remains the thinnest area.
-
-**Goal:** Extend VPE beyond the reference implementation into a full prompt security framework.
-
-### Subtasks
-
-| ID | Task | Acceptance Criteria |
-|----|------|--------------------|
-| P9.1 | Hierarchical keys (issuer chains) | Key hierarchy: root CA → intermediate → signing key. Envelope includes cert chain. Verification walks the chain. Enables: team signing, delegation, revocation without re-keying all agents. |
-| P9.2 | Time-based key expiry | Keys have `not_before` and `not_after` timestamps. Automatic rotation daemon. Integration with P5.5 key lifecycle. |
-| P9.3 | Multi-signature envelopes | Requires N-of-M signatures before execution. Use case: "two of three team leads must approve this prompt." `vpe_sign` adds signature to existing envelope. `vpe_verify` checks threshold. |
-| P9.4 | Hardware key support | YubiKey (PIV/OpenPGP), TPM, or macOS Secure Enclave for private key storage. Signing operation moves to hardware. Private key never leaves the device. |
-| P9.5 | VPE federation (cross-agent trust) | Agent A can sign a prompt for Agent B if they share a trust anchor. Trust anchors are pre-shared or discovered via DNS/DID. Cross-agent audit trail. |
-
-### Architecture (Hierarchical)
-```
-Root Key (offline, in vault)
-  └── Issuer Key ("team:security")
-       ├── Signing Key ("agent:hermes-prod")
-       │    └── VPE envelopes for Hermes 1
-       ├── Signing Key ("agent:hermes-staging")
-       │    └── VPE envelopes for Hermes 2
-       └── Backup Key (cold storage)
-```
-
----
-
-## Phase 10 — End State: Prompt Security Standard ⬜ External
-
-> Adoption milestone, not a code deliverable — gated on outside acceptance (OWASP/MCP) or a 6-month production bake. Nothing to build here.
-
-**Goal:** VPE is adopted beyond this project — referenced in OWASP, MCP, and used by other agent frameworks.
-
-### Capabilities
-- **Any Hermes agent** can verify prompt provenance cryptographically
-- **Division memory** has signed episodes — tamper-evident history
-- **EPD scanner** catches 95%+ of injection attempts before they reach the LLM
-- **Secrets Broker** keeps credentials out of model context entirely
-- **Multiple trust models**: HMAC (internal), Ed25519 (public), multi-sig (high-security)
-- **Cross-framework**: TypeScript/Go/Rust ports exist with API parity to the Python reference (P8.5a), and interoperability is now exercised by a shared canonical test-vector fixture (`tests/vectors/vpe_vectors.json`, 22 vectors) with an automated interop test in all four languages. *Caveat: the test runners could not be re-executed during the latest doc sync (sandboxed); pass-status rests on commit history — see Known Limitations.*
-
-### When to Stop
-Seal is "done" when:
-- VPE is referenced in OWASP Agentic Security Top 10 or MCP spec, OR
-- It's been running in production for 6 months with zero VPE bypasses, OR
-- You decide prompt-level crypto isn't the right approach and pivot
-
-### Shutdown states
-- **Paused:** Middleware disabled, CLI tools still work, audit data preserved
-- **Archived:** Integrations removed, spec and proposals remain as reference
-- **Open-sourced:** Project transferred to community ownership
+1|# Seal — Verified Prompt Envelope Protocol & AI Agent Security
+2|
+3|> **Status:** Phases 1–9 core capabilities **implemented and tested** — VPE Core (Ed25519 + HMAC + multi-sig + hierarchical cert chains + hardware signing), EPD Scanner (regex + LLM + Unicode-smuggling defense), Secrets Broker, persistent stores, full key lifecycle + rotation daemon, Hermes/Division integration, rollback, adversarial fuzzer, and benchmarks. **684 tests collected.**
+4|> **Remaining:** external adoption only — P8 (cross-language port **publishing** + OWASP/MCP standardization) and P10 (production-bake). Cross-language ports (TS/Go/Rust) are **implemented in-repo with their own test suites** (`vpe-ts/`, `vpe-go/`, `vpe-rust/`, P8.5a, commits `bb9896c` + later) AND now share a **single canonical cross-language test-vector fixture** (`tests/vectors/vpe_vectors.json`, 22 vectors, generated from the Python reference) consumed by an automated interop test in all four languages (commits `f7c2af4` fixture+tests, `e50ce42`/`f575146` TTL fix). The ports are **not yet published to package registries**. See per-phase status tags below.
+5|> **P8.3b — GitHub push DONE, PyPI publish still NOT done / unverified this sync (`t_a40992b1`; publish-prep `t_0c0fff25`/`t_dd8f649c`):** The repo IS live on GitHub at `github.com/rezearcher/seal` (`origin/master` = `bb98aa1` as of last verify; local HEAD now `d97ea7c`). As of the 2026-06-27 check the Python package was **NOT on PyPI** (`https://pypi.org/pypi/seal-vpe/json` → **404**); this could **not be re-verified on 2026-06-29** (sandbox blocks outbound network), so PyPI status is **unverified — treat as still-not-published**: `publish.yml` triggers only on `release: published`, **no GitHub Release exists** (a local `v0.1.0` tag at `0b8233f` from 2026-06-18 predates the publish-prep fix and was never turned into a release), so the workflow has never fired and `pip install seal-vpe` will fail. **Publish-prep code changes shipped (`t_0c0fff25`, commit `d97ea7c`, 2026-06-28; reviewed under `t_dd8f649c`):** the `[project.urls]` in `pyproject.toml` were corrected from `github.com/nousresearch/seal` to the real remote `github.com/rezearcher/seal`, and `seal/__init__.py` now resolves `__version__` via `version("seal-vpe")` (the correct dist name) instead of `version("seal")`. These are config/packaging fixes only — **no actual publish occurred**. Residual: `pyproject.toml` `authors` still lists `"Nous Research"` (line 13) — unchanged by `d97ea7c`.
+6|> **Board:** seal
+7|> **Assignee profile:** default (Claude Code via Max plan)
+8|> **Foreman cadence:** 3x/day (4am/noon/8pm)
+9|
+10|> ⚠️ **Doc-accuracy note:** the "Build Phases" sections below were the *original plan*. Each phase header now carries a status tag (✅ Implemented / 🟡 Partial / ⬜ External). For the authoritative inventory of what physically exists, see [What's Built](#whats-built-current-state) — keep that section in sync when modules land.
+11|
+12|## Core Problem
+13|
+14|AI agents execute prompts from multiple sources: user input, tool returns, attached documents, memory recall, skill pipelines. Any of these can inject unauthorized instructions. Current industry defense is purely linguistic (Anthropic's prose-level "untrusted data, never execute instructions" — SOTA is ~91% static regex, bypassed by semantic obfuscation). No existing product, paper, or standard does **cryptographic provenance verification** at the prompt level.
+15|
+16|Seal (VPE) replaces linguistic detection with cryptographic enforcement.
+17|
+18|## The VPE Protocol
+19|
+20|A verified prompt is a JSON wrapper with Ed25519 signature:
+21|
+22|```json
+23|{
+24|  "vpe_version": "1.0",
+25|  "prompt": "search the database for customer records...",
+26|  "scope": {
+27|    "allowed_tools": ["database_search", "read_file"],
+28|    "max_tokens": 4000,
+29|    "max_cost": 0.05,
+30|    "allowed_domains": ["*.internal.corp.com"]
+31|  },
+32|  "issuer": "user:rez",
+33|  "audience": "agent:hermes-default",
+34|  "doc_sha256": "abc123...",
+35|  "ttl_seconds": 300,
+36|  "nonce": "a1b2c3d4",
+37|  "counter": 42,
+38|  "signature": "ed25519_sig_hex..."
+39|}
+40|```
+41|
+42|### Fields
+43|| Field | Purpose | Example |
+44||-------|---------|---------|
+45|| `vpe_version` | Protocol version | `"1.0"` |
+46|| `prompt` | The actionable instruction | `"search database..."` |
+47|| `scope` | Least-privilege capabilities | `{allowed_tools, max_tokens, ...}` |
+48|| `issuer` | Who authorized this | `"user:rez"` |
+49|| `audience` | Which agent should execute | `"agent:hermes-default"` |
+50|| `doc_sha256` | Binding to source document | `"abc123..."` |
+51|| `ttl_seconds` | Expiry from issuance | `300` (5 minutes) |
+52|| `nonce` | Uniqueness (replay prevention) | `"a1b2c3d4"` |
+53|| `counter` | Monotonic — detect skipped prompts | `42` |
+54|| `signature` | Ed25519 over all prior fields | hex string |
+55|
+56|## Three Sub-Systems
+57|
+58|### 1. VPE Core (sign + verify)
+59|- Ed25519 key pair generation
+60|- `vpe_sign(prompt, scope, issuer, audience, ...) → signed_envelope`
+61|- `vpe_verify(signed_envelope) → {valid: bool, reason: str}`
+62|- Python reference implementation with no dependencies beyond `cryptography` or `nacl`
+63|
+64|### 2. EPD (Embedded Prompt Detection)
+65|- Pre-LLM scanner that runs inside the VPE verification gate
+66|- Detects: jailbreak patterns, role-switching, "ignore previous instructions", hidden instructions in attached docs
+67|- Regex first-pass (~91% catch rate), LLM classification pass for suspicious-but-ambiguous
+68|- Outputs: `{clean: bool, flags: [pattern_name, confidence, location]}`
+69|
+70|### 3. Secrets Broker
+71|- Credential proxy that never lets API keys/tokens enter model context
+72|- Agents request secrets by label (`"tastytrade_sandbox"`) — broker injects directly into tool calls
+73|- Keeps keys out of prompt history, log files, and training data
+74|
+75|## Build Phases
+76|
+77|### Phase 1 — VPE Spec & Reference Implementation
+78|- Write formal protocol spec (this doc → v1.0 spec)
+79|- Python implementation: sign + verify with Ed25519
+80|- CLI tool: `seal sign <prompt> --scope ... --issuer ...`
+81|- CLI tool: `seal verify <envelope>`
+82|- Unit tests: signing, verification, tamper detection, TTL expiry, replay prevention
+83|
+84|### Phase 2 — EPD Scanner
+85|- Regex patterns for known injection vectors
+86|- LLM fallback for semantic obfuscation
+87|- Integration with VPE verification gate
+88|- Test suite: clean prompts, known injection patterns, edge cases
+89|
+90|### Phase 3 — Secrets Broker
+91|- Credential store (key-value, file-backed or env-based)
+92|- Proxy pattern for tool calls
+93|- Audit log of credential access
+94|- Integration test: agent tool calls broker, not context
+95|
+96|### Phase 4 — Hermes/Division Integration
+97|- MCP middleware layer: every tool call wrapped in VPE
+98|- Division memory episode signing
+99|- Proposal as OWASP Agentic Security control category
+100|- Proposal as MCP spec extension (signing layer)
+101|
+102|## What Already Exists (Rez's prior work)
+103|- **Membrane** (Night Agent): Ed25519 Tickets per-action, chained Receipts — action-level, VPE is prompt-level, complementary
+104|- **TRUSTBAC**: RBAC+ABAC+ReBAC+RAdAC authorization framework — VPE is prompt authentication, complementary
+105|- **Division injection scanning gap**: write-time scanning identified but not implemented (low effort, high impact)
+106|- **Hermes skills guard**: 120+ regex patterns — reactive, no crypto
+107|
+108|## Industry Gap Analysis
+109|| Domain | What Exists | Seal's Addition |
+110||--------|-------------|-----------------|
+111|| Injection detection | Guardrails AI, NeMo, Rebuff, Lakera | Cryptographic provenance, not just content filtering |
+112|| Prompt security products | All content-based | None do signed execution |
+113|| OWASP LLM Top 10 | Identifies injection as #1 risk | No crypto mitigations proposed |
+114|| MCP spec | Protocol for tools/lifecycle | No auth, no scope, no replay protection |
+115|| IETF | No standards for prompt security | Could be an IETF draft |
+116|
+117|## Key Constraints
+118|- Zero external runtime dependencies (stdlib + cryptography lib only)
+119|- All operations must be verifiable offline (no SaaS dependency)
+120|- VPE must be backwards-compatible — unsigned prompts still work (logged as "unverified")
+121|- Secrets Broker must be opt-in — agents can run without it
+122|- EPD false positive rate < 5% on benign prompts
+123|
+124|---
+125|
+126|<a id="whats-built-current-state"></a>
+127|## What's Built (current state)
+128|
+129|> Authoritative inventory of modules that physically exist, with the test file that exercises each. **684 tests collected.** Keep this table current when modules land — it is the anti-confusion anchor for the roadmap below.
+130|
+131|### VPE Core — signing & verification (Phase 1, plus 5.4 / 9.1 / 9.3 / 9.4)
+132|| Module | LOC | Provides | Tests |
+133||--------|-----|----------|-------|
+134|| `seal/core.py` | 1229 | `vpe_sign`/`vpe_verify` (Ed25519), `vpe_sign_hmac`/`vpe_verify_hmac` (HMAC-SHA256, P5.4), `vpe_sign_multi`/`vpe_verify_multi` (N-of-M multi-sig, P9.3), `verify_certificate`/`verify_cert_chain` (hierarchical issuer chains, P9.1), `vpe_sign_hardware`/`vpe_verify_hardware` (P9.4), scope/nonce/counter/TTL enforcement | `test_core.py` (146), `test_crypto_bypass.py` (54) |
+135|| `seal/vpe.py` | 589 | Envelope dataclasses, canonical JSON, multi-backend Ed25519 (NaCl or `cryptography`) | `test_core.py` |
+136|| `seal/cli.py` | 649 | 18-command CLI (see below) | e2e |
+137|
+138|### EPD Scanner — injection detection (Phase 2, plus 7.1 / 7.4)
+139|| Module | LOC | Provides | Tests |
+140||--------|-----|----------|-------|
+141|| `seal/epd/scanner.py` | 349 | Two-pass scan (regex ~91% + optional LLM). Normalization strips **all** Unicode format chars (Cf) + variation selectors; `_detect_hidden_unicode()` flags/decodes invisible **tag-block & variation-selector smuggling** (threat-model **T11**), runs unconditionally | `test_epd.py` (57) |
+142|| `seal/epd/patterns.py` | 615 | Regex patterns: jailbreaks, role-switch, ignore-instructions, delimiter confusion, hidden markers, tool hallucination, homoglyph/leet | — |
+143|| `seal/epd/llm_classifier.py` | 145 | LLM tiebreaker / `llm_scan_all` catch-all pass (independent model) | `test_epd.py` |
+144|| `seal/epd/fuzzer.py` | 960 | Pattern-mutation fuzzer, `seal fuzz` (P7.1 adversarial). Mutation-strategy + composite loops log a `logger.warning` on per-strategy failure rather than silently `continue` (t_ed914b66 / t_0b226fe3, e29288d) | `test_epd.py` |
+145|| `seal/epd/{config,models}.py` | 147 | `EPDConfig`, `EPDFlag`, `EPDResult` | `test_epd.py` |
+146|
+147|### Secrets Broker — credentials out of context (Phase 3)
+148|| Module | LOC | Provides | Tests |
+149||--------|-----|----------|-------|
+150|| `seal/broker.py` | 91 | `{SECRET:label}` placeholder resolution into tool calls, deep-copy + `redact()` | `test_broker.py` (12) |
+151|| `seal/secrets_broker.py` | 34 | Back-compat shim — re-exports `CredentialStore` / `CredentialStoreCorruptedError` from `seal.credential_store` (legacy plaintext store deleted, P3.3a / `t_84148f82`). **Now emits `DeprecationWarning` at import time** (t_fc67351b, commit `1971948`). | `test_secrets_broker.py` (migrated to encrypted store) |
+152|| `seal/credential_store.py` | 207 | File store, **Fernet-encrypted at rest** | `test_credential_store.py` (11) |
+153|| `seal/audit.py` | 234 | Append-only JSONL access audit (records access, never values) | `test_audit.py` (12) |
+154|
+155|### Key lifecycle & persistence (Phase 5)
+156|| Module | LOC | Provides | Tests |
+157||--------|-----|----------|-------|
+158|| `seal/store.py` | 247 | SQLite (WAL) `NonceStore` + `CounterStore`, expiry cleanup (P5.2) | `test_store.py` (32) |
+159|| `seal/key_manager.py` / `seal/key_store.py` | 920 | SQLite key registry: generated→active→expiring→retired→revoked, auto-rotation guard (P5.5) | `test_key_manager.py` (37), `test_key_lifecycle.py` (27) |
+160|| `seal/rotator.py` | 43 | Rotation daemon — one-shot (cron) or persistent (`seal key daemon`) | (lifecycle) |
+161|| `benchmark_vpe_verify.py`, `benchmark_envelope_size.py` | — | P5.1 / P5.3 perf + size benchmarks | — |
+162|
+163|### Deployment & integration (Phases 4 / 6)
+164|| Module | LOC | Provides | Tests |
+165||--------|-----|----------|-------|
+166|| `seal/integration/hermes_vpe_middleware.py` | 671 | Wraps Hermes tool calls in VPE verify + EPD scan | `test_e2e_real_tools.py` (37) |
+167|| `seal/integration/hermes_skills_guard.py` | 316 | VPE/EPD-backed skills guard | `test_e2e_real_tools.py` |
+168|| `seal/integration/division_vpe_signer.py` | 522 | Sign Division episodes | `test_division_audit.py` (13) |
+169|| `seal/integration/division_vpe_audit.py` | 465 | Store/query VPE results in Division memory (P6.4). L-006/007 hardened (t_55865f62, t_373d679c): canonicalization failure now logs warning + uses `degraded:` prefix; cross-reference append logs warning instead of bare `except:pass`. Dead `_canonical_hash()` with bare except removed (t_a4423aec). | `test_division_audit.py` |
+170|| `seal/division_audit.py` | 722 | Division audit-trail store + query | `test_division_audit.py` |
+171|| `seal/rollback.py` | 508 | One-toggle disable + full config rollback, audit preserved (P6.5). Paths resolved lazily at call time via `_resolve_seal_home()`/`_resolve_hermes_home()` with `SEAL_HOME`/`HERMES_HOME` env overrides — no hardcoded `Path.home()` at import time (L-006). Audit-log line counting (`_archive_audit`, status report) uses a `with open(...)` context manager (no FD leak) and logs `logger.warning(..., exc_info=True)` on read failure instead of silently swallowing (t_226c651b) | `test_graceful_degradation.py` (20) |
+172|
+173|### Advanced (Phase 9)
+174|| Module | LOC | Provides | Tests |
+175||--------|-----|----------|-------|
+176|| `seal/hardware.py` | 706 | HSM abstraction — YubiKey/TPM/Secure Enclave signing, key never leaves device (P9.4) | `test_hardware.py` (27) |
+177|| `seal/federation.py` | 699 | Cross-agent trust anchors, federated audit (P9.5) | `test_federation.py` (32) |
+178|
+179|### Cross-language ports & interop (Phase 8.5a)
+180|- **Ports:** `vpe-ts/` (TS, 617 LOC, 114 tests), `vpe-go/vpe/` (~778 LOC, 39 test funcs), `vpe-rust/src/` (~929 LOC, 33 `#[test]`) — API parity with the Python reference, **not published** to npm/crates.io/Go registries.
+181|- **Shared interop fixture:** `tests/vectors/vpe_vectors.json` (22 vectors, valid + tampered, Ed25519 + HMAC; ttl ∈ {0, 31536000}), generated by `tests/generate_vectors.py` from the Python reference.
+182|- **Interop tests (one per language, same fixture):** `tests/test_interop_vectors.py`, `vpe-ts/tests/interop_vectors.test.ts`, `vpe-go/vpe/interop_vectors_test.go`, `vpe-rust/tests/interop_vectors_test.rs`. (Not re-run this sync — sandbox blocks the runners.)
+183|
+184|### Standards, packaging & docs (Phase 8, partial)
+185|- **`VPE_SPEC_v1.md`** (839 lines) — full protocol spec.
+186|- **`proposals/`** — `owasp_agentic_security_vpe.md`, `mcp_signing_extension.md`, `SEP-vpe-signing-layer.mdx`; **`seal-community/`** — conference CFP drafts.
+187|- **Docs site** — MkDocs (`mkdocs.yml`, `docs/` 18 pages: spec, API reference, CLI, integration, threat model, quickstart) → `docs.yml` CI deploy.
+188|- **CI** — `.github/workflows/`: `test.yml`, `lint.yml`, `benchmark.yml`, `publish.yml` (PyPI `seal-vpe`, trusted-publishing via `pypa/gh-action-pypi-publish`, `on: release: published`). **`publish.yml` has never fired** — no GitHub Release has been published, so `seal-vpe` is **not on PyPI** (404 as of 2026-06-27; **not re-verifiable 2026-06-29 — sandbox blocks network**, treat as still-unpublished). Repo is live at `github.com/rezearcher/seal`. Built artifacts exist locally in `dist/` (`seal_vpe-0.1.0-py3-none-any.whl`, `.tar.gz`, built 2026-06-07) but were never uploaded. Publish-prep config fixes landed in `d97ea7c` (`t_0c0fff25`): `[project.urls]` repo links corrected to `rezearcher/seal`, `__init__.py` dist name → `seal-vpe`. No publish step was run.
+189|- **Version reporting (FIXED, `t_0c0fff25`/`d97ea7c`):** `seal/__init__.py` now resolves `__version__` via `importlib.metadata.version("seal-vpe")` — the correct distribution name (was `version("seal")`, the wrong name, which fell back to the hard-coded `"0.1.0"`). With `seal-vpe` installed in this environment, `version("seal-vpe")` now resolves to `0.1.0` from installed metadata (verified 2026-06-29), not the fallback branch; the `except PackageNotFoundError → "0.1.0"` fallback remains for uninstalled use.
+190|
+191|### CLI surface (`seal …`)
+192|`genkey` · `sign` · `verify` · `secrets {add,get,list,delete}` · `audit` · `key {rotate,revoke,disable,list,daemon}` · `rollback` · `hardware` · `fuzz` · `status`
+193|
+194|---
+195|
+196|## Security Notes / Known Limitations
+197|
+198|- **Private keys unencrypted at rest:** `seal/key_manager.py` stores private keys raw (unencrypted) in the SQLite registry at `~/.seal/keys.db`. The module docstring acknowledges this: "encryption-at-rest is future work." Protect the file with restrictive filesystem permissions (`chmod 600`) until encryption-at-rest lands.
+199|- **TTL enforcement requires `iat`:** In both `seal/core.py` and `seal/vpe.py`, TTL expiry is only enforced when the `iat`/`issued_at` field is present in the envelope. When `iat` is absent (backward-compat envelopes), TTL is silently skipped. Envelopes produced by `vpe_sign` always include `iat`.
+200|- **Single, encrypted credential store (legacy plaintext store removed — P3.3a, `t_84148f82`):** `seal/credential_store.py` (`seal.credential_store.CredentialStore`) is Fernet-encrypted at rest and is the only credential-store implementation. The legacy plaintext-JSON `CredentialStore` (and `AuditLog`) that previously lived in `seal/secrets_broker.py` and wrote credentials to `~/.hermes/secrets.json` have been **deleted**. `seal/secrets_broker.py` is now a 34-line back-compat shim that re-exports `CredentialStore` / `CredentialStoreCorruptedError` from `seal.credential_store`; its module docstring marks it deprecated, and it **now emits a `DeprecationWarning` at import time** (t_fc67351b, commit `1971948`). Use `seal.broker`, `seal.credential_store`, and `seal.audit` directly for all new integrations.
+201|- **`seal/integration/division_vpe_audit.py` — L-006 + L-007 hardened + dead code removed (closed t_55865f62, t_373d679c, t_a4423aec):** Three fixes in `DivisionVPEAudit`. (1) **L-006 (canonicalization fallback in `record_from_result`):** A bare `except Exception:` that silently aliased the envelope hash to a nonce fragment was replaced with `except (TypeError, ValueError, KeyError)`, adds a `degraded:` prefix, logs a `logger.warning` naming the issuer + degraded hash, and sets `reason="hash_computation_failed"` when the caller didn't supply one. (2) **L-007 (cross-reference append):** A bare `except: pass` in `record()` when appending the Division episode reference to the local log was replaced with a `logger.warning` that includes the `audit_id` and `episode_id`. (Gap: `_extract_episode_id` still has a silent `except (json.JSONDecodeError, TypeError, AttributeError): pass`.)
+202|- **Cross-language ports implemented in-repo, not published (P8.5a):** TypeScript (`vpe-ts/src/index.ts`, 617 LOC), Go (`vpe-go/vpe/`, ~778 LOC), and Rust (`vpe-rust/src/`, ~929 LOC) ports exist and each ships its own test suite (TS 114 cases, Go 39 test funcs, Rust 33 `#[test]`). All three expose API parity with the Python reference: `generateKeyPair`, `vpeSign`/`vpeVerify` (Ed25519), `vpeSignHmac`/`vpeVerifyHmac`, and canonical-JSON serialization. **Not yet published** to npm/crates.io/Go module registry — `npm install seal-vpe`, `cargo add vpe-rust`, `go get github.com/seal/vpe-go/vpe` will 404. **Shared cross-language test-vector fixture now committed (P8.5a, was previously a gap):** `tests/vectors/vpe_vectors.json` (22 vectors, valid + tampered, Ed25519 + HMAC) is generated from the Python reference by `tests/generate_vectors.py` and consumed by an automated interop test in **all four** languages — `tests/test_interop_vectors.py`, `vpe-ts/tests/interop_vectors.test.ts`, `vpe-go/vpe/interop_vectors_test.go`, `vpe-rust/tests/interop_vectors_test.rs` — each resolving the *same* repo-root fixture path. Byte-for-byte cross-language verification is now exercised by running tests, not just asserted by spec. (Caveat: this doc-sync could **not** re-execute the four test runners — the sandbox blocks `pytest`/`go test`/`jest`/`cargo test`; "passing" rests on commit history, where `t_253e5d8a`/`e50ce42`/`f575146` specifically fixed 4 TTL-expiry failures by bumping vector TTLs to 31536000s, not on a re-run during this sync.) See the Phase 8 section below.
+203|
+204|---
+205|
+206|## Phase 5 — Performance & Production Hardening ✅ Implemented
+207|
+208|> Persistent SQLite stores (`store.py`), key lifecycle + rotation (`key_manager.py`/`key_store.py`/`rotator.py`), HMAC path (`core.vpe_*_hmac`), and benchmarks all landed and tested.
+209|
+210|**Goal:** Make VPE fast enough for real-time use and robust enough for production deployment.
+211|
+212|### Subtasks
+213|
+214|| ID | Task | Acceptance Criteria |
+215||----|------|--------------------|
+216|| P5.1 | VPE verification benchmark | Measure overhead: `vpe_verify()` latency for envelopes of 1KB, 10KB, 100KB. Target < 5ms for 1KB, < 20ms for 100KB. Report breakdown (parsing, signature verify, scope check, nonce check, expiry check). |
+217|| P5.2 | Persistent nonce/counter store | SQLite-backed `NonceStore` and `CounterStore`. Survive restarts. Automatic cleanup of expired nonces (>TTL). Thread-safe. Path: `~/.seal/store.db`. |
+218|| P5.3 | Envelope size optimization | Canonical JSON without unnecessary whitespace. Optional field stripping (omit empty scope, omit default version). Benchmark size reduction vs. parse time. |
+219|| P5.4 | HMAC-SHA256 alternative | For contexts where Ed25519 is overkill (internal trust, short-lived prompts). HMAC path: `vpe_sign_hmac()`, `vpe_verify_hmac()`. No key generation needed — shared secret. Document trade-offs: faster but no non-repudiation. |
+220|| P5.5 | Key lifecycle management | Key generation → active → expiring → retired → revoked. Automatic rotation (generate new key N days before expiry). Graceful: old keys still verify signed envelopes, new envelopes use new key. CLI: `seal key rotate`, `seal key list`, `seal key revoke`. |
+221|
+222|### Performance Targets
+223|```
+224|Metric                Current      Target
+225|vpe_verify(1KB)       ~2ms         <5ms (benchmark first)
+226|vpe_verify(100KB)     ~15ms        <20ms
+227|Envelope overhead     ~500B        <300B (with optional stripping)
+228|Nonce check           in-memory    SQLite, <1ms
+229|```
+230|
+231|---
+232|
+233|## Phase 6 — Hermes Production Deployment 🟡 Partial
+234|
+235|> Middleware, graceful degradation, Division audit trail (`division_audit.py`), and rollback (`rollback.py`) are built and tested. Live production wiring into a running Hermes/Division instance is deployment-dependent, not a code gap.
+236|
+237|**Goal:** VPE middleware running in production, protecting real Hermes tool calls.
+238|
+239|### Subtasks
+240|
+241|| ID | Task | Acceptance Criteria |
+242||----|------|--------------------|
+243|| P6.1 | Wire VPE into Hermes config | VPE middleware registered as optional plugin in Hermes `config.yaml`. Enabled/disabled via config toggle. No Hermes core modifications needed — MCP middleware layer only. |
+244|| P6.2 | End-to-end test with real tools | Full chain: prompt → VPE sign → Hermes receives → VPE verify → scope check → EPD scan → tool call → response → VPE sign response. Test with `read_file`, `terminal`, `web_search`. |
+245|| P6.3 | Graceful degradation | Unsigned prompts still work: logged as "unverified" with warning. Expired envelopes: logged, prompt still executed (configurable strict/lenient mode). Invalid signatures: rejected with clear error. |
+246|| P6.4 | Division audit trail | Every VPE verification result stored in Division memory as episode: envelope hash, issuer, result (valid/invalid/expired), timestamp. Queryable: "show me all rejected prompts in the last hour." Hardened (L-010, `t_3035a8b3`): audit hashing no longer swallows all exceptions — canonicalization failure now logs a warning, marks the record `hash_computation_failed`, and emits a `degraded:`-prefixed identifier instead of a hash silently aliased to the nonce. The degraded fallback is retained-and-flagged, not removed; its failure branch is not yet covered by a test. Further hardened in `division_vpe_audit.py` (L-006/L-007, `t_55865f62`/`t_373d679c`): canonicalization fallback in `record_from_result` logs warning + prefixed degraded hash; cross-reference append logs warning instead of bare `except:pass`. |
+247|| P6.5 | Rollback procedure | Disable VPE middleware with single config toggle. Script to roll back all VPE-related changes to Hermes config. No data loss on rollback — audit trail preserved. Hardened (L-006, `t_9da24d09`): `~/.seal` and `~/.hermes` paths are resolved lazily at call time (`_resolve_seal_home()`/`_resolve_hermes_home()`) instead of hardcoded `Path.home()` constants at import time, with `SEAL_HOME`/`HERMES_HOME` env overrides for testability and non-default homes. Further hardened (t_226c651b): the audit-log line count in `_archive_audit` and the status report now runs inside a `with open(...)` block (closes the descriptor even on error) and logs a warning with `exc_info=True` on read failure instead of silently swallowing it (`count = 0` fallback). |
+248|
+249|### Middleware Flow
+250|```
+251|Incoming prompt (raw or VPE-enveloped)
+252|  → Detect: is this a VPE envelope or raw text?
+253|  → If enveloped: vpe_verify() → if invalid: log + reject (strict) or log + warn (lenient)
+254|  → If enveloped + valid: extract prompt + scope → pass to Hermes
+255|  → If raw: log as unverified → pass to Hermes (with warning)
+256|  → EPD scan on extracted prompt (always, regardless of envelope)
+257|  → On response: optionally sign response envelope
+258|```
+259|
+260|---
+261|
+262|## Phase 7 — Adversarial Testing ✅ Implemented
+263|
+264|> Mutation fuzzer (`epd/fuzzer.py`, `seal fuzz`), cryptographic-bypass + scope-escalation suites (`test_crypto_bypass.py`, 54 tests), and the P7.4 LLM-bypass finding (→ `llm_scan_all`) are done. The **T11 Unicode-smuggling** defense is the latest adversarial hardening (see [Threat Model](docs/threat-model.md)). The fuzzer's mutation-strategy and composite-mutation loops were also de-silenced (t_ed914b66 / t_0b226fe3): a strategy that raises now emits a `logger.warning` naming the strategy + template before continuing, rather than discarding the failure — so a broken strategy is visible instead of quietly shrinking the corpus.
+265|
+266|**Goal:** Break VPE before someone else does.
+267|
+268|### Subtasks
+269|
+270|| ID | Task | Acceptance Criteria |
+271||----|------|--------------------|
+272|| P7.1 | EPD pattern mutation fuzzing | Generate 1000+ mutations of known injection patterns (character insertion, deletion, substitution, encoding variations). Measure catch rate. Target: >95% on known patterns, >85% on novel mutations. |
+273|| P7.2 | VPE cryptographic bypass attempts | Test: signature replay (reuse signature from different envelope), key confusion (substitute different key), malleability (reorder JSON fields), algorithm confusion (force HMAC path when Ed25519 expected). |
+274|| P7.3 | Scope escalation attempts | Test: modify scope after signing, grant additional tools, extend TTL, change audience/issuer. Verify all scope modifications cause verification failure. |
+275||| P7.4 | LLM-based adversarial generation | Use an LLM to generate novel injection prompts designed to bypass EPD patterns. Feed output back into EPD pattern development. **Result: 71/73 prompts (97.3%) bypassed regex — regex alone cannot catch semantic attacks. Solution: ``llm_scan_all`` config option + LLM classifier.** |
+276|| P7.5 | Third-party audit prep | Document attack surface, threat model, known limitations. Create security audit checklist. Reference comparable systems (JWT, PASETO, Sigstore) for comparison. |
+277|
+278|### Test Metrics
+279|```
+280||EPD catch rate          Target      Actual (P7.4)
+281||Known patterns          >95%        ~91% (regex)
+282||Mutations               >85%        N/A (P7.1)
+283||LLM-generated novel     >70% (stretch)  0% (regex alone, before llm_scan_all)
+284|VPE bypass rate         0% (no cryptographic bypasses)
+285|```
+286|
+287|---
+288|
+289|## Phase 8 — Standards & Community 🟡 Partial
+290|
+291|> Proposals drafted (`proposals/`: OWASP, MCP extension, SEP), docs site + CI + PyPI packaging **config** in place (`pyproject.toml` + `publish.yml`), CFP drafts written (`seal-community/`). **Shipped since (P8.5a):** cross-language ports — TS/Go/Rust — implemented in-repo with per-port test suites, **plus a shared cross-language test-vector fixture** (`tests/vectors/vpe_vectors.json`, 22 vectors) with an automated interop test in all four languages (commit `f7c2af4`; TTL fix `e50ce42`/`f575146`). **Shipped since (P8.3b, `t_a40992b1`):** the open-source repo is **pushed to GitHub** at `github.com/rezearcher/seal` (verified `origin/master` = `bb98aa1`). **External-dependent / NOT done:** PyPI publish of `seal-vpe` (**404 — never uploaded**, no GitHub Release to trigger `publish.yml`), registry publishing of the ports, and actual OWASP/MCP acceptance.
+292|
+293|**Goal:** VPE becomes an industry reference — not just a local tool.
+294|
+295|### Subtasks
+296|
+297|| ID | Task | Acceptance Criteria |
+298||----|------|--------------------|
+299|| P8.1 | Submit OWASP proposal | PR or submission to OWASP Agentic Security Top 10 repository. New control category: "Prompt Authentication & Cryptographic Verification" with VPE as reference implementation. |
+300|| P8.2 | Draft MCP spec extension | Formal MCP spec extension proposal. Define: `vpe` field in MCP messages, key exchange mechanism, verification error codes. Submit as PR to MCP spec repo or IETF draft. |
+301|| P8.3 (🟡 GitHub DONE / PyPI NOT done — P8.3b, `t_a40992b1`) | Open source release | Clean GitHub repo: README, LICENSE, CONTRIBUTING, issue templates, CI pipeline (GitHub Actions for tests + benchmarks). PyPI package: `pip install seal-vpe`. **Status (verified 2026-06-27):** repo is **live on GitHub** (`github.com/rezearcher/seal`, `origin/master` = `bb98aa1`) with README/LICENSE/CONTRIBUTING/CI all present. **PyPI publish NOT done** — `seal-vpe` returned **404** on PyPI (2026-06-27; not re-checkable 2026-06-29, network-blocked, assume still unpublished); `publish.yml` fires only on `release: published` and no GitHub Release exists, so it has never run. `pip install seal-vpe` fails today. **Publish-prep config landed** (`t_0c0fff25`/`d97ea7c`, reviewed `t_dd8f649c`): repo URLs and dist name fixed — code changes committed, **publish itself unverified/not done**. Gap to close: publish a GitHub Release (or run a manual `uv build && uv publish`) to populate PyPI. |
+302|| P8.4 | Documentation site | Hosted docs (GitHub Pages or similar): protocol spec, API reference, integration guide, CLI reference, threat model. Quickstart: "Add VPE to your agent in 5 minutes." |
+303|| P8.5 | Reference implementations (**🟡 IMPLEMENTED IN-REPO + INTEROP-WIRED, NOT PUBLISHED** — P8.5a) | TS/Go/Rust ports built and committed (`vpe-ts/`, `vpe-go/`, `vpe-rust/`) with API parity (`vpeSign`/`vpeVerify` Ed25519, `vpeSignHmac`/`vpeVerifyHmac`, canonical JSON) and per-port test suites (TS 114, Go 39, Rust 33). Python remains the canonical spec. **Now met:** the "same test vector suite (cross-language verification)" acceptance criterion — `tests/vectors/vpe_vectors.json` (22 vectors generated from the Python reference via `tests/generate_vectors.py`) is consumed by an automated interop test in all four languages, each resolving the same repo-root fixture (verified by path inspection this sync). **Still open:** packages unpublished, so `npm install seal-vpe`, `go get github.com/seal/vpe-go/vpe`, and `cargo add vpe-rust` still 404. Interop/per-port pass-counts were **not independently re-run** during this doc sync (sandbox blocks pytest/go/jest/cargo); pass-status rests on commit history, including `t_253e5d8a` which fixed 4 TTL-expiry interop failures. |
+304|| P8.6 | Community engagement | Blog post: "Why your AI agent needs cryptographic prompt verification." Conference talk CFP submissions (AI security conferences, OWASP events, Rust/NYC, etc.). Discussion with Hermes upstream for native support. |
+305|
+306|### Standards Timeline
+307|```
+308|Month 1: OWASP proposal submission + first reference port (TypeScript)
+309|Month 2: MCP spec extension draft + Go port
+310|Month 3: Rust port + CI + documentation site
+311|Month 4: Conference submissions + upstream discussions
+312|Month 6: v1.0 release candidate
+313|```
+314|
+315|---
+316|
+317|## Phase 9 — Advanced Features ✅ Implemented (core)
+318|
+319|> Hierarchical issuer chains (`core.verify_cert_chain`, P9.1), key expiry/rotation (P9.2), multi-signature envelopes (`core.vpe_sign_multi`, P9.3), hardware signing (`hardware.py`, P9.4), and federation (`federation.py`, P9.5) are all built and tested. Trust-anchor discovery via DNS/DID remains the thinnest area.
+320|
+321|**Goal:** Extend VPE beyond the reference implementation into a full prompt security framework.
+322|
+323|### Subtasks
+324|
+325|| ID | Task | Acceptance Criteria |
+326||----|------|--------------------|
+327|| P9.1 | Hierarchical keys (issuer chains) | Key hierarchy: root CA → intermediate → signing key. Envelope includes cert chain. Verification walks the chain. Enables: team signing, delegation, revocation without re-keying all agents. |
+328|| P9.2 | Time-based key expiry | Keys have `not_before` and `not_after` timestamps. Automatic rotation daemon. Integration with P5.5 key lifecycle. |
+329|| P9.3 | Multi-signature envelopes | Requires N-of-M signatures before execution. Use case: "two of three team leads must approve this prompt." `vpe_sign` adds signature to existing envelope. `vpe_verify` checks threshold. |
+330|| P9.4 | Hardware key support | YubiKey (PIV/OpenPGP), TPM, or macOS Secure Enclave for private key storage. Signing operation moves to hardware. Private key never leaves the device. |
+331|| P9.5 | VPE federation (cross-agent trust) | Agent A can sign a prompt for Agent B if they share a trust anchor. Trust anchors are pre-shared or discovered via DNS/DID. Cross-agent audit trail. |
+332|
+333|### Architecture (Hierarchical)
+334|```
+335|Root Key (offline, in vault)
+336|  └── Issuer Key ("team:security")
+337|       ├── Signing Key ("agent:hermes-prod")
+338|       │    └── VPE envelopes for Hermes 1
+339|       ├── Signing Key ("agent:hermes-staging")
+340|       │    └── VPE envelopes for Hermes 2
+341|       └── Backup Key (cold storage)
+342|```
+343|
+344|---
+345|
+346|## Phase 10 — End State: Prompt Security Standard ⬜ External
+347|
+348|> Adoption milestone, not a code deliverable — gated on outside acceptance (OWASP/MCP) or a 6-month production bake. Nothing to build here.
+349|
+350|**Goal:** VPE is adopted beyond this project — referenced in OWASP, MCP, and used by other agent frameworks.
+351|
+352|### Capabilities
+353|- **Any Hermes agent** can verify prompt provenance cryptographically
+354|- **Division memory** has signed episodes — tamper-evident history
+355|- **EPD scanner** catches 95%+ of injection attempts before they reach the LLM
+356|- **Secrets Broker** keeps credentials out of model context entirely
+357|- **Multiple trust models**: HMAC (internal), Ed25519 (public), multi-sig (high-security)
+358|- **Cross-framework**: TypeScript/Go/Rust ports exist with API parity to the Python reference (P8.5a), and interoperability is now exercised by a shared canonical test-vector fixture (`tests/vectors/vpe_vectors.json`, 22 vectors) with an automated interop test in all four languages. *Caveat: the test runners could not be re-executed during the latest doc sync (sandboxed); pass-status rests on commit history — see Known Limitations.*
+359|
+360|### When to Stop
+361|Seal is "done" when:
+362|- VPE is referenced in OWASP Agentic Security Top 10 or MCP spec, OR
+363|- It's been running in production for 6 months with zero VPE bypasses, OR
+364|- You decide prompt-level crypto isn't the right approach and pivot
+365|
+366|### Shutdown states
+367|- **Paused:** Middleware disabled, CLI tools still work, audit data preserved
+368|- **Archived:** Integrations removed, spec and proposals remain as reference
+369|- **Open-sourced:** Project transferred to community ownership
+370|
