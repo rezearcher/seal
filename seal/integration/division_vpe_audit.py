@@ -462,20 +462,4 @@ def _generate_audit_id() -> str:
     return uuid.uuid4().hex
 
 
-def _canonical_hash(envelope: Dict[str, Any]) -> str:
-    """Compute the SHA-256 hash of a canonicalized VPE envelope.
 
-    Args:
-        envelope: A VPE envelope dict.
-
-    Returns:
-        Hex SHA-256 digest.
-    """
-    import hashlib
-
-    try:
-        from seal.vpe import _canonical_envelope
-        canonical = _canonical_envelope(envelope)
-    except Exception:
-        canonical = str(json.dumps(envelope, sort_keys=True, default=str))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
