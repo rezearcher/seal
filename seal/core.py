@@ -7,15 +7,13 @@ import secrets
 import time
 from collections import OrderedDict
 
-from collections.abc import Mapping
-
 from cryptography.exceptions import InvalidSignature
-
-from seal.store import NonceStore
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
+
+from seal.store import NonceStore
 
 # ---------------------------------------------------------------------------
 # Protocol constants
@@ -86,7 +84,7 @@ def _strip_empty_fields(envelope: dict) -> dict:
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 
-def generate_key_pair():
+def generate_key_pair() -> dict:
     """Generate a new Ed25519 key pair.
 
     Returns:
@@ -514,7 +512,6 @@ def vpe_verify_hmac(
     Returns:
         dict: ``{"valid": bool, "reason": str}``
     """
-    reasons = []
 
     # 1. Parse
     try:

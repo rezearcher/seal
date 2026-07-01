@@ -22,7 +22,7 @@ lifecycle, deployment, and advanced trust models layered on top:
 ```
 
 > For the full module-by-module inventory and per-phase build status, see the
-> root [`ARCHITECTURE.md` → What's Built](../ARCHITECTURE.md).
+> root [ARCHITECTURE.md → What's Built](https://github.com/nousresearch/seal/blob/main/ARCHITECTURE.md).
 
 ## Component Details
 

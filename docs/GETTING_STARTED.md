@@ -442,7 +442,7 @@ These are the concrete issues found during install and verification on 2026-06-1
 
 1. **`pip install seal-vpe` is not available.** PyPI publish is pending. Use the `git+https`, source, or wheel install paths above.
 
-2. **Private keys are stored unencrypted at rest.** Keys in `~/.seal/keys.db` are raw bytes with no encryption. The key manager docstring acknowledges this as future work. See [SECURITY.md](../SECURITY.md) for the full security posture.
+2. **Private keys are stored unencrypted at rest.** Keys in `~/.seal/keys.db` are raw bytes with no encryption. The key manager docstring acknowledges this as future work. See [SECURITY.md](https://github.com/nousresearch/seal/blob/main/SECURITY.md) for the full security posture.
 
 3. **The prebuilt wheel in `dist/` is stale.** It was built from an earlier commit and is missing the `key`, `hardware`, `epd`, `memory`, `quickstart`, and `fuzz` subcommands. Use `git+https` or source to get the current CLI surface.
 
@@ -450,8 +450,8 @@ These are the concrete issues found during install and verification on 2026-06-1
 
 ## Where to go next
 
-- **[README](../README.md)** — Full feature overview and architecture summary
+- **[README](index.md)** — Full feature overview and architecture summary
 - **[ARCHITECTURE.md](architecture.md)** — Component boundaries, data flow, security model
-- **[VPE_SPEC_v1.md](../VPE_SPEC_v1.md)** — Envelope format spec and signing protocol
+- **[VPE_SPEC_v1.md](spec.md)** — Envelope format spec and signing protocol
 - **[docs/api/](api/)** — API reference
-- **[SECURITY.md](../SECURITY.md)** — Security policy, threat model, known limitations
+- **[SECURITY.md](https://github.com/nousresearch/seal/blob/main/SECURITY.md)** — Security policy, threat model, known limitations

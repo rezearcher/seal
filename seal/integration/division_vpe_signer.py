@@ -60,21 +60,19 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Try to import seal modules
 try:
     from seal.vpe import (
+        VPE_VERSION,
+        VPEResult,
+        _canonical_envelope,
+        load_or_generate_keypair,
         vpe_sign,
         vpe_verify,
-        VPEResult,
-        generate_keypair,
-        load_or_generate_keypair,
-        save_keypair,
-        VPE_VERSION,
-        _canonical_envelope,
     )
     _SEAL_AVAILABLE = True
 except ImportError:
@@ -127,10 +125,10 @@ class DivisionVPESigner:
 
     def __init__(
         self,
-        key_dir: Optional[str] = None,
+        key_dir: str | None = None,
         agent_name: str = "hermes-default",
         mode: str = "bypass",
-        nonce_store: Optional["NonceStore"] = None,
+        nonce_store: NonceStore | None = None,
     ):
         """Initialize the Division VPE signer.
 
@@ -148,15 +146,15 @@ class DivisionVPESigner:
         self._agent_name = agent_name
         self._mode = mode
 
-        self._private_key: Optional[bytes] = None
-        self._public_key: Optional[bytes] = None
+        self._private_key: bytes | None = None
+        self._public_key: bytes | None = None
 
         # Replay protection: prefer a persistent NonceStore so seen nonces
         # survive process restarts. Falls back to an in-memory set when
         # seal.store is unavailable.
         if nonce_store is not None:
-            self._nonce_store: Optional["NonceStore"] = nonce_store
-            self._seen_nonces: Optional[set] = None
+            self._nonce_store: NonceStore | None = nonce_store
+            self._seen_nonces: set | None = None
         elif _NONCE_STORE_AVAILABLE:
             self._nonce_store = NonceStore()
             self._seen_nonces = None
@@ -165,13 +163,13 @@ class DivisionVPESigner:
             self._seen_nonces = set()
 
         # P6.4b: Optional Division memory audit trail
-        self._audit: Optional[DivisionVPEAudit] = None
+        self._audit: DivisionVPEAudit | None = None
 
     # ------------------------------------------------------------------
     # Audit trail integration (P6.4b)
     # ------------------------------------------------------------------
 
-    def set_audit(self, audit: Optional["DivisionVPEAudit"]) -> None:
+    def set_audit(self, audit: DivisionVPEAudit | None) -> None:
         """Attach a DivisionVPEAudit instance for recording sign/verify ops.
 
         When set, every ``wrap_for_storage`` and ``verify_stored_value``
@@ -184,7 +182,7 @@ class DivisionVPESigner:
         """
         self._audit = audit
 
-    def set_audit_from_func(self, remember_func, conversation_id: str = "vpe-audit-trail"):
+    def set_audit_from_func(self, remember_func: Callable, conversation_id: str = "vpe-audit-trail") -> None:
         """Convenience: create and attach a DivisionVPEAudit from a remember function.
 
         Args:
@@ -202,7 +200,7 @@ class DivisionVPESigner:
 
     def _record_audit(
         self,
-        envelope: Dict[str, Any],
+        envelope: dict[str, Any],
         result_valid: bool,
         operation: str,
         reason: str = "",
@@ -343,7 +341,7 @@ class DivisionVPESigner:
             )
 
             # Wrap the original value with the signature
-            wrapper: Dict[str, Any] = {
+            wrapper: dict[str, Any] = {
                 _VPE_SIGNED_MARKER: True,
                 "vpe_version": envelope.get("vpe_version", VPE_VERSION),
                 "value": value,
@@ -482,7 +480,7 @@ class DivisionVPESigner:
     # Batch operations
     # ------------------------------------------------------------------
 
-    def verify_batch(self, values: List[Any]) -> List[Tuple[Any, VPEResult]]:
+    def verify_batch(self, values: list[Any]) -> list[tuple[Any, VPEResult]]:
         """Verify a batch of memory values.
 
         Args:
