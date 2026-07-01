@@ -14,9 +14,9 @@ import re
 import threading
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 from cryptography.fernet import Fernet, InvalidToken
+
+logger = logging.getLogger(__name__)
 
 try:  # PyYAML is a declared dependency; JSON is a graceful fallback.
     import yaml

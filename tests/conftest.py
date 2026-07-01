@@ -2,6 +2,7 @@
 import os
 import sys
 import tempfile
+
 import pytest
 
 _SEAL_ROOT = os.path.expanduser("~/projects/seal")
@@ -9,7 +10,7 @@ if _SEAL_ROOT not in sys.path:
     sys.path.insert(0, _SEAL_ROOT)
 
 # Canonical middleware lives in the importable package (seal.integration).
-from seal.integration.hermes_vpe_middleware import VPEMiddleware
+from seal.integration.hermes_vpe_middleware import VPEMiddleware  # noqa: E402
 
 
 @pytest.fixture

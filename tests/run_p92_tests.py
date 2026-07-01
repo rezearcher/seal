@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-import subprocess, sys
+import subprocess
+import sys
+
 r = subprocess.run([sys.executable, "-m", "pytest",
     "/home/rez/projects/seal/tests/test_key_lifecycle.py",
     "-v", "--tb=short"], cwd="/home/rez/projects/seal",

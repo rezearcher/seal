@@ -60,6 +60,7 @@ import json
 import logging
 import os
 import time
+from collections.abc import Callable
 from typing import Any
 
 logger = logging.getLogger(__name__)

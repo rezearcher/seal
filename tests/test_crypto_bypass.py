@@ -23,7 +23,6 @@ import json
 import pytest
 
 from seal.core import (
-    _ENVELOPE_FIELDS,
     _canonical_json,
     generate_key_pair,
     vpe_sign,
@@ -31,7 +30,6 @@ from seal.core import (
     vpe_verify,
     vpe_verify_hmac,
 )
-
 
 # =========================================================================
 # Fixtures
@@ -551,7 +549,6 @@ class TestAlgorithmConfusion:
         """JWT algorithm confusion variant: compute HMAC-SHA256 with the
         Ed25519 public key as the HMAC secret. Must fail because VPE only
         uses Ed25519 verification."""
-        import hashlib
         import hmac
         env = dict(valid_dict)
         canon = _canonical_json(env)
@@ -680,7 +677,6 @@ class TestComplexAttacks:
     def test_hmac_signature_only_replay(self, alice_keys, hmac_secret, valid_dict):
         """HMAC signature (hex) replayed as Ed25519 signature in an
         Ed25519 envelope — should fail on sig length mismatch or verify."""
-        import hashlib
         import hmac
         env = dict(valid_dict)
         # Compute fresh HMAC for THIS envelope's content

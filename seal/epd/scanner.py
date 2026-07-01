@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Optional
 
 from seal.epd.config import EPDConfig
 from seal.epd.models import EPDFlag, EPDResult
@@ -304,7 +303,7 @@ class EPDScanner:
     many ``scan`` calls and hold no per-scan state.
     """
 
-    def __init__(self, config: Optional[EPDConfig] = None) -> None:
+    def __init__(self, config: EPDConfig | None = None) -> None:
         self.config = config or EPDConfig()
 
     # -- public API -------------------------------------------------------- #
@@ -404,7 +403,7 @@ class EPDScanner:
 
     # -- pass 2: LLM (optional) ------------------------------------------- #
 
-    def _llm_pass(self, prompt: str, regex_flags: list[EPDFlag]) -> Optional[EPDFlag]:
+    def _llm_pass(self, prompt: str, regex_flags: list[EPDFlag]) -> EPDFlag | None:
         """Run the optional LLM classification pass.
 
         Returns a single synthesized :class:`EPDFlag` on a confident
@@ -442,7 +441,7 @@ class EPDScanner:
 _DEFAULT_SCANNER = EPDScanner()
 
 
-def scan(prompt: str, config: Optional[EPDConfig] = None) -> EPDResult:
+def scan(prompt: str, config: EPDConfig | None = None) -> EPDResult:
     """Scan ``prompt`` with the default (regex-only) scanner or a custom one.
 
     ``scan("...")`` is regex-only and makes no network calls. Pass a

@@ -35,19 +35,20 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # Try to import seal — fall back gracefully if not installed
 try:
+    from seal.epd import EPDResult
+    from seal.epd import scan as epd_scan
     from seal.vpe import (
         VPE_VERSION,
         VPEResult,
-        generate_keypair,
         load_or_generate_keypair,
-        vpe_sign as _vpe_sign_raw,
+    )
+    from seal.vpe import (
         vpe_verify as _vpe_verify_raw,
     )
-    from seal.epd import scan as epd_scan, EPDResult
     _SEAL_AVAILABLE = True
 except ImportError:
     _SEAL_AVAILABLE = False
@@ -84,7 +85,7 @@ _CONFIG_DEFAULTS = {
 }
 
 
-def _load_config() -> Dict[str, Any]:
+def _load_config() -> dict[str, Any]:
     """Load VPE config from Hermes config.yaml, with env var overrides.
 
     Returns merged config dict.
@@ -145,7 +146,7 @@ class VPECheckResult:
         decision: str,
         reason: str = "",
         verified: bool = True,
-        degradation: Optional[str] = None,
+        degradation: str | None = None,
         mode: str = "audit",
     ):
         self.allowed = allowed
@@ -155,7 +156,7 @@ class VPECheckResult:
         self.degradation = degradation
         self.mode = mode
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "allowed": self.allowed,
             "decision": self.decision,
@@ -190,7 +191,7 @@ class VPEMiddleware:
         )
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """Initialize VPE middleware.
 
         Args:
@@ -203,20 +204,20 @@ class VPEMiddleware:
         self._enabled = self.config.get("vpe_enabled", False)
         self._mode = self.config.get("vpe_mode", "audit")
         self._key_dir = self.config.get("vpe_key_dir", _CONFIG_DEFAULTS["vpe_key_dir"])
-        self._skip_tools: List[str] = self.config.get("vpe_skip_tools", [])
+        self._skip_tools: list[str] = self.config.get("vpe_skip_tools", [])
         self._epd_enabled = self.config.get("vpe_epd_enabled", True)
         self._epd_min_confidence = float(self.config.get("vpe_epd_min_confidence", 0.85))
 
         # Keypair cache
-        self._public_key: Optional[bytes] = None
-        self._private_key: Optional[bytes] = None
+        self._public_key: bytes | None = None
+        self._private_key: bytes | None = None
 
         # Nonce replay cache (in-memory set)
         self._seen_nonces: set = set()
 
         # Envelope first-seen timestamps for TTL expiry checking
         # Keyed by nonce → time.time() when first verified
-        self._envelope_timestamps: Dict[str, float] = {}
+        self._envelope_timestamps: dict[str, float] = {}
 
     # ------------------------------------------------------------------
     # Key management
@@ -259,7 +260,7 @@ class VPEMiddleware:
     # EPD scan
     # ------------------------------------------------------------------
 
-    def _scan_prompt(self, prompt: str) -> Dict[str, Any]:
+    def _scan_prompt(self, prompt: str) -> dict[str, Any]:
         """Run EPD scan on a prompt.
 
         Returns scan result dict with 'clean', 'flags', 'llm_used' keys.
@@ -290,7 +291,7 @@ class VPEMiddleware:
     # Envelope TTL / expiry tracking
     # ------------------------------------------------------------------
 
-    def _check_envelope_expiry(self, envelope: Dict[str, Any]) -> Optional[str]:
+    def _check_envelope_expiry(self, envelope: dict[str, Any]) -> str | None:
         """Check if an envelope has expired based on TTL and first-seen time.
 
         Since v1.0 envelopes may or may not carry an ``issued_at`` field,
@@ -338,9 +339,9 @@ class VPEMiddleware:
     def check_tool_call(
         self,
         tool_name: str,
-        tool_args: Dict[str, Any],
+        tool_args: dict[str, Any],
         prompt: str = "",
-        prompt_envelope: Optional[Dict[str, Any]] = None,
+        prompt_envelope: dict[str, Any] | None = None,
     ) -> VPECheckResult:
         """Check if a tool call should be allowed.
 
@@ -542,7 +543,7 @@ class VPEMiddleware:
 
 
 # Global middleware instance (created once, reused across calls)
-_middleware: Optional[VPEMiddleware] = None
+_middleware: VPEMiddleware | None = None
 
 
 def _get_middleware() -> VPEMiddleware:
@@ -561,7 +562,7 @@ def on_pre_tool_call(
     task_id: str = "",
     user_message: str = "",
     **kwargs,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Pre-tool-call hook handler for Hermes plugin system.
 
     Called before every tool invocation. Return a dict with 'veto': True
@@ -619,7 +620,7 @@ def on_pre_tool_call(
 # ---------------------------------------------------------------------------
 
 
-def setup_vpe(mode: str = "audit", key_dir: Optional[str] = None) -> VPEMiddleware:
+def setup_vpe(mode: str = "audit", key_dir: str | None = None) -> VPEMiddleware:
     """Setup VPE middleware with defaults for Hermes integration.
 
     This is the recommended entry point for Hermes startup scripts.

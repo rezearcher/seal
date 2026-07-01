@@ -8,14 +8,11 @@ import pytest
 from seal.key_manager import (
     DEFAULT_EXPIRY_DAYS,
     STATUS_ACTIVE,
-    STATUS_EXPIRING,
-    STATUS_GENERATED,
     STATUS_RETIRED,
     STATUS_REVOKED,
     KeyManager,
     fingerprint_of,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -452,7 +449,6 @@ class TestEncryptionAtRest:
 
     def test_master_key_file_permissions(self, tmp_path):
         mk_path = tmp_path / "master.key"
-        from cryptography.fernet import Fernet
         from seal.key_manager import _load_or_create_master_key
         key = _load_or_create_master_key(mk_path)
         assert mk_path.exists()
@@ -481,8 +477,8 @@ class TestEncryptionAtRest:
         assert len(k1["private_key"]) == 32
 
     def test_list_keys_decrypts_transparently(self, km):
-        k1 = km.generate_key()
-        k2 = km.generate_key()
+        _ = km.generate_key()
+        _ = km.generate_key()
         all_keys = km.list_keys()
         for k in all_keys:
             assert len(k["private_key"]) == 32
@@ -490,15 +486,15 @@ class TestEncryptionAtRest:
         assert len(all_keys) == 2
 
     def test_verification_keys_decrypts(self, km):
-        k1 = km.generate_key()
-        k2 = km.rotate_key()
+        _ = km.generate_key()
+        _ = km.rotate_key()
         vkeys = km.get_verification_keys()
         for k in vkeys:
             assert len(k["private_key"]) == 32
 
     def test_get_expiring_keys_decrypts(self, km):
         now = int(time.time())
-        k1 = km.generate_key(not_after=now + 3600)
+        _ = km.generate_key(not_after=now + 3600)
         expiring = km.get_expiring_keys(days_before=30)
         for k in expiring:
             assert len(k["private_key"]) == 32
@@ -531,8 +527,9 @@ class TestLegacyMigration:
     """Legacy raw keys should be auto-migrated to Fernet-encrypted on init."""
 
     def test_legacy_raw_key_migrated_transparently(self, tmp_path):
-        from cryptography.fernet import Fernet
         import sqlite3
+
+        from cryptography.fernet import Fernet
         mk = Fernet.generate_key()
         db = tmp_path / "legacy.db"
         conn = sqlite3.connect(str(db))
@@ -578,8 +575,9 @@ class TestLegacyMigration:
 
     def test_legacy_raw_key_warning_without_migration(self, tmp_path):
         """If migrate_legacy_keys is not called, a legacy raw key warns on read."""
-        from cryptography.fernet import Fernet
         import sqlite3
+
+        from cryptography.fernet import Fernet
         mk = Fernet.generate_key()
         db = tmp_path / "legacy_nowarn.db"
         conn = sqlite3.connect(str(db))

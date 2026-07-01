@@ -5,9 +5,7 @@
 # ---------------------------------------------------------------------------
 
 import json
-import os
 import time
-from pathlib import Path
 
 import pytest
 
@@ -25,7 +23,6 @@ from seal.core import (
     vpe_verify_multi,
 )
 from seal.store import NonceStore
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -87,7 +84,7 @@ class TestCanonicalJSON:
 
     def test_field_ordering(self):
         """Output fields must follow _ENVELOPE_FIELDS order (minus signature, minus omitted None)."""
-        from seal.core import _canonical_json, _ENVELOPE_FIELDS
+        from seal.core import _ENVELOPE_FIELDS, _canonical_json
 
         env = self._make_envelope()
         raw = _canonical_json(env).decode("utf-8")
@@ -103,7 +100,7 @@ class TestCanonicalJSON:
 
     def test_field_ordering_with_cert_chain(self):
         """When cert_chain is present, it appears as the last field in canonical form."""
-        from seal.core import _canonical_json, _ENVELOPE_FIELDS
+        from seal.core import _ENVELOPE_FIELDS, _canonical_json
 
         env = self._make_envelope(cert_chain=[{"subject_id": "leaf"}])
         raw = _canonical_json(env).decode("utf-8")

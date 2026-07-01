@@ -4,13 +4,11 @@ from __future__ import annotations
 import json
 import os
 import time
-from datetime import datetime, timezone
 
 import pytest
 
-from seal.vpe import VPEResult, vpe_sign, vpe_verify, generate_keypair
 from seal.audit import AuditLog
-
+from seal.vpe import generate_keypair, vpe_sign, vpe_verify
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -164,7 +162,7 @@ def test_local_fallback_division_fails(sealer_audit, audit_log):
 
     sealer_audit._remember_func = broken_remember
 
-    aid = sealer_audit.record(
+    _ = sealer_audit.record(
         envelope_hash="hash2",
         issuer="user:test",
         result="error",

@@ -11,8 +11,6 @@ Covers:
 """
 from __future__ import annotations
 
-import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -23,14 +21,11 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from seal.vpe import vpe_sign, vpe_verify, generate_keypair, VPE_VERSION
-
-from seal.integration.hermes_vpe_middleware import (
-    VPEMiddleware,
+from seal.integration.hermes_vpe_middleware import (  # noqa: E402
     VPECheckResult,
-    _SEAL_AVAILABLE,
+    VPEMiddleware,
 )
-
+from seal.vpe import VPE_VERSION, generate_keypair, vpe_sign  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -69,9 +64,8 @@ def expired_envelope(keys):
     sk, pk = keys
     past_time = int(time.time()) - 3600  # 1 hour ago
     # We need to override the issued_at — build the envelope manually
+
     from seal.vpe import _canonical_envelope, _sign_bytes
-    from seal.vpe import SIGNED_FIELDS, DEFAULT_TTL_SECONDS
-    import secrets
 
     envelope = {
         "vpe_version": VPE_VERSION,
@@ -243,7 +237,7 @@ class TestExpiredEnvelopes:
 
         Verify the same nonce again after simulating time passage.
         """
-        from seal.vpe import vpe_sign, generate_keypair
+        from seal.vpe import generate_keypair, vpe_sign
 
         sk, pk = generate_keypair()
         nonce = "expiry-ttl-test"

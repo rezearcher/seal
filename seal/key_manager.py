@@ -32,7 +32,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from seal.core import generate_key_pair, vpe_verify, vpe_verify_hmac
+from seal.core import generate_key_pair, vpe_verify
 
 # ---------------------------------------------------------------------------
 # Constants

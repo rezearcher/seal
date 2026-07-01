@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import abc
 import hashlib
-import json
 import os
 import platform
 import shutil
@@ -45,8 +44,8 @@ from pathlib import Path
 from typing import ClassVar
 
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -314,7 +313,7 @@ class TPMProvider(HsmProvider):
             )
 
             # Read public key
-            result = subprocess.run(
+            subprocess.run(
                 ["tpm2_readpublic", "-c", key_ctx, "-o", pubkey_pem, "-Q"],
                 check=True, capture_output=True, timeout=30,
             )

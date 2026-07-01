@@ -406,7 +406,7 @@ print()
 # ---------------------------------------------------------------------------
 # Self-check: verify every vector using Python's own implementations
 # ---------------------------------------------------------------------------
-from seal.core import vpe_verify, vpe_verify_hmac
+from seal.core import vpe_verify, vpe_verify_hmac  # noqa: E402
 
 for v in vectors:
     if v["tampered_envelope_json"]:
@@ -422,6 +422,6 @@ for v in vectors:
     expected = v["expected_verify"]
     status = "PASS" if result["valid"] == expected else "FAIL"
     if status == "FAIL":
-        print(f"  [{status}] {v['id']}: expected valid={expected}, got valid={result['valid']} reason={result['reason']}")
+        print(f"  [{status}] {v['id']}: expected valid={expected}, got valid={result['valid']} reason={result['reason']}")  # noqa: E501
     else:
         print(f"  [{status}] {v['id']}")

@@ -21,9 +21,9 @@ _SEAL_ROOT = os.path.expanduser("~/projects/seal")
 if _SEAL_ROOT not in sys.path:
     sys.path.insert(0, _SEAL_ROOT)
 
-from seal.vpe import VPE_VERSION, VPEResult, vpe_sign, vpe_verify
-from seal.epd.scanner import scan as epd_scan
-from seal.core import vpe_sign_hmac, vpe_verify_hmac
+from seal.core import vpe_sign_hmac, vpe_verify_hmac  # noqa: E402
+from seal.epd.scanner import scan as epd_scan  # noqa: E402
+from seal.vpe import VPE_VERSION, vpe_sign, vpe_verify  # noqa: E402
 
 
 def sign_env(prompt, private_key, *, scope=None, issuer="user:test",
@@ -92,6 +92,7 @@ class TestFullSignVerifyChain:
 
     def test_wrong_key_rejected(self, middleware):
         import tempfile
+
         from seal.integration.hermes_vpe_middleware import VPEMiddleware as _VPEM
         td = tempfile.mkdtemp(prefix="vpe-alt-")
         mw2 = _VPEM(config={"vpe_enabled": False, "vpe_key_dir": td})
@@ -246,6 +247,7 @@ class TestResponseSigning:
 
     def test_cross_key_rejected(self, middleware):
         import tempfile
+
         from seal.integration.hermes_vpe_middleware import VPEMiddleware as _VPEM
         pk_req, sk_req = middleware._public_key, middleware._private_key
         td = tempfile.mkdtemp(prefix="vpe-resp-")

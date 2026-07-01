@@ -10,19 +10,17 @@ from pathlib import Path
 import pytest
 
 from seal import (
+    FederatedSignResult,
+    FederationAuditLog,
     TrustAnchorRegistry,
     generate_key_pair,
-    vpe_federated_sign,
-    vpe_federated_verify,
+    resolve_trust_anchor,
     resolve_via_did,
     resolve_via_dns,
-    resolve_trust_anchor,
-    FederationAuditLog,
-    FederatedSignResult,
-    ResolutionResult,
+    vpe_federated_sign,
+    vpe_federated_verify,
 )
 from seal.audit import AuditLog
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

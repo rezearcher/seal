@@ -10,7 +10,6 @@ Installed at ~/.seal/bin/seal-rotator.py
 
 import argparse
 import sys
-import time
 
 from seal.key_manager import KeyManager
 

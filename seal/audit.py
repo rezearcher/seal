@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 DEFAULT_AUDIT_PATH = "~/.seal/audit.jsonl"
@@ -18,7 +18,7 @@ MAX_AGE_DAYS = 30
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class AuditLog:
@@ -80,7 +80,7 @@ class AuditLog:
         # oldest live at the front: walk forward only until the first entry still
         # inside the retention window, then slice. O(pruned), not O(total).
         if self.max_age_days is not None and kept:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=self.max_age_days)
+            cutoff = datetime.now(UTC) - timedelta(days=self.max_age_days)
             drop = 0
             for line in kept:
                 stripped = line.strip()
@@ -93,7 +93,7 @@ class AuditLog:
                     # Can't parse this entry's age — stop pruning to be safe.
                     break
                 if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
+                    ts = ts.replace(tzinfo=UTC)
                 if ts >= cutoff:
                     break
                 drop += 1
@@ -198,7 +198,7 @@ class AuditLog:
                 since_dt = None
             else:
                 if since_dt.tzinfo is None:
-                    since_dt = since_dt.replace(tzinfo=timezone.utc)
+                    since_dt = since_dt.replace(tzinfo=UTC)
 
         with self._lock:
             try:
@@ -225,7 +225,7 @@ class AuditLog:
                 except (TypeError, ValueError):
                     continue
                 if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
+                    ts = ts.replace(tzinfo=UTC)
                 if ts < since_dt:
                     continue
             entries.append(entry)

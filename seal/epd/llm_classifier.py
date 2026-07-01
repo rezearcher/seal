@@ -18,7 +18,6 @@ import json
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Optional
 
 from seal.epd.config import LLMConfig
 from seal.epd.models import EPDFlag
@@ -76,7 +75,7 @@ def _build_user_message(prompt: str, regex_flags: list[EPDFlag]) -> str:
     )
 
 
-def _parse_response(body: bytes) -> Optional[LLMVerdict]:
+def _parse_response(body: bytes) -> LLMVerdict | None:
     """Extract an :class:`LLMVerdict` from an OpenAI-style response body."""
     try:
         payload = json.loads(body)
@@ -102,7 +101,7 @@ def _parse_response(body: bytes) -> Optional[LLMVerdict]:
     return LLMVerdict(label=label, confidence=confidence, evidence=evidence)
 
 
-def _extract_json_object(content: str) -> Optional[dict]:
+def _extract_json_object(content: str) -> dict | None:
     """Pull the first ``{...}`` JSON object out of a model's text reply."""
     if not isinstance(content, str):
         return None
@@ -119,9 +118,9 @@ def _extract_json_object(content: str) -> Optional[dict]:
 
 def classify(
     prompt: str,
-    llm: Optional[LLMConfig],
+    llm: LLMConfig | None,
     regex_flags: list[EPDFlag],
-) -> Optional[LLMVerdict]:
+) -> LLMVerdict | None:
     """Classify ``prompt`` via the configured LLM.
 
     Returns an :class:`LLMVerdict`, or ``None`` to signal "fall back to

@@ -33,12 +33,11 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +115,7 @@ class AuditRecord:
         audience: str = "",
         result: str = "",
         reason: str = "",
-        timestamp: Optional[float] = None,
+        timestamp: float | None = None,
         source: str = "",
         episode_id: str = "",
         **extra: Any,
@@ -131,9 +130,9 @@ class AuditRecord:
         self.episode_id = episode_id
         self._extra = extra
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to a dict for Division storage."""
-        d: Dict[str, Any] = {
+        d: dict[str, Any] = {
             "envelope_hash": self.envelope_hash,
             "issuer": self.issuer,
             "audience": self.audience,
@@ -149,7 +148,7 @@ class AuditRecord:
         return d
 
     @classmethod
-    def from_episode(cls, episode: Dict[str, Any]) -> "AuditRecord":
+    def from_episode(cls, episode: dict[str, Any]) -> AuditRecord:
         """Reconstruct an AuditRecord from a Division EpisodeModel dict.
 
         The episode_content holds the audit record dict; episode_metadata
@@ -199,10 +198,10 @@ class _DivisionClient:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _post(self, path: str, body: dict) -> Optional[dict]:
+    def _post(self, path: str, body: dict) -> dict | None:
         """POST JSON to Division and return parsed response."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         url = f"{self.base_url}{path}"
         data = json.dumps(body).encode("utf-8")
@@ -225,11 +224,11 @@ class _DivisionClient:
             logger.warning("Division connection error on POST %s: %s", path, exc)
             return None
 
-    def _get(self, path: str, params: Optional[dict] = None) -> Optional[dict]:
+    def _get(self, path: str, params: dict | None = None) -> dict | None:
         """GET from Division and return parsed response."""
-        import urllib.request
-        import urllib.parse
         import urllib.error
+        import urllib.parse
+        import urllib.request
 
         url = f"{self.base_url}{path}"
         if params:
@@ -258,19 +257,19 @@ class _DivisionClient:
         conversation_id: str,
         value: Any,
         *,
-        agent: Optional[str] = None,
-        key: Optional[str] = None,
-        domain: Optional[str] = None,
-        category: Optional[str] = None,
-        trace: Optional[str] = None,
+        agent: str | None = None,
+        key: str | None = None,
+        domain: str | None = None,
+        category: str | None = None,
+        trace: str | None = None,
         importance: float = 0.5,
-        metadata: Optional[dict] = None,
-    ) -> Optional[str]:
+        metadata: dict | None = None,
+    ) -> str | None:
         """Store a memory episode.
 
         Returns the episode_id on success, None on failure.
         """
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "conversation_id": conversation_id,
             "value": value,
             "importance": importance,
@@ -297,21 +296,21 @@ class _DivisionClient:
         self,
         conversation_id: str,
         *,
-        agent: Optional[str] = None,
-        key: Optional[str] = None,
-        domain: Optional[str] = None,
-        category: Optional[str] = None,
-        trace: Optional[str] = None,
-        after_ts: Optional[float] = None,
-        before_ts: Optional[float] = None,
+        agent: str | None = None,
+        key: str | None = None,
+        domain: str | None = None,
+        category: str | None = None,
+        trace: str | None = None,
+        after_ts: float | None = None,
+        before_ts: float | None = None,
         limit: int = 50,
         order_by: str = "time",
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Recall memory episodes matching the given filters.
 
         Returns list of EpisodeModel dicts, newest first when order_by='time'.
         """
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "conversation_id": conversation_id,
             "limit": min(limit, 100),
             "order_by": order_by,
@@ -341,7 +340,7 @@ class _DivisionClient:
         conversation_id: str,
         query: str,
         limit: int = 10,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Full-text search memory episodes.
 
         Returns list of EpisodeModel dicts.
@@ -410,8 +409,8 @@ class DivisionAuditTrail:
         result: str,
         reason: str = "",
         source: str = "unspecified",
-        extra: Optional[Dict[str, Any]] = None,
-    ) -> Optional[str]:
+        extra: dict[str, Any] | None = None,
+    ) -> str | None:
         """Record a VPE verification result as a Division memory episode.
 
         Args:
@@ -448,7 +447,7 @@ class DivisionAuditTrail:
             value.update(extra)
 
         # Metadata for quick filtering at the Division level
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "envelope_hash": envelope_hash,
             "issuer": issuer,
             "audience": audience,
@@ -489,9 +488,9 @@ class DivisionAuditTrail:
         self,
         limit: int = 20,
         *,
-        after_ts: Optional[float] = None,
-        before_ts: Optional[float] = None,
-    ) -> List[AuditRecord]:
+        after_ts: float | None = None,
+        before_ts: float | None = None,
+    ) -> list[AuditRecord]:
         """Get the most recent verification records.
 
         Args:
@@ -513,7 +512,7 @@ class DivisionAuditTrail:
         )
         return [AuditRecord.from_episode(ep) for ep in episodes]
 
-    def query_by_hash(self, envelope_hash: str) -> List[AuditRecord]:
+    def query_by_hash(self, envelope_hash: str) -> list[AuditRecord]:
         """Find all verification records for a specific envelope hash.
 
         Args:
@@ -532,7 +531,7 @@ class DivisionAuditTrail:
         )
         return [AuditRecord.from_episode(ep) for ep in episodes]
 
-    def query_by_issuer(self, issuer: str, limit: int = 50) -> List[AuditRecord]:
+    def query_by_issuer(self, issuer: str, limit: int = 50) -> list[AuditRecord]:
         """Find verification records for a specific issuer.
 
         Args:
@@ -557,9 +556,9 @@ class DivisionAuditTrail:
         result: str,
         limit: int = 50,
         *,
-        after_ts: Optional[float] = None,
-        before_ts: Optional[float] = None,
-    ) -> List[AuditRecord]:
+        after_ts: float | None = None,
+        before_ts: float | None = None,
+    ) -> list[AuditRecord]:
         """Find verification records by result type.
 
         Args:
@@ -588,8 +587,8 @@ class DivisionAuditTrail:
         self,
         limit: int = 50,
         *,
-        after_ts: Optional[float] = None,
-    ) -> List[AuditRecord]:
+        after_ts: float | None = None,
+    ) -> list[AuditRecord]:
         """Find all rejected/invalid/expired verifications.
 
         This is the "show me all rejected prompts" query.
@@ -608,7 +607,7 @@ class DivisionAuditTrail:
         all_rejected.sort(key=lambda r: r.timestamp, reverse=True)
         return all_rejected[:limit]
 
-    def search(self, query: str, limit: int = 20) -> List[AuditRecord]:
+    def search(self, query: str, limit: int = 20) -> list[AuditRecord]:
         """Full-text search across audit records.
 
         Args:
@@ -632,8 +631,8 @@ class DivisionAuditTrail:
     def get_summary(
         self,
         *,
-        after_ts: Optional[float] = None,
-    ) -> Dict[str, Any]:
+        after_ts: float | None = None,
+    ) -> dict[str, Any]:
         """Get a summary of verification activity.
 
         Args:
@@ -642,7 +641,7 @@ class DivisionAuditTrail:
         Returns:
             Dict with counts per result type and total.
         """
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
         total = 0
         for cat in _ALL_CATEGORIES:
             records = self.query_by_result(cat, limit=100, after_ts=after_ts)
@@ -666,8 +665,8 @@ class DivisionAuditTrail:
         Returns:
             True if Division health endpoint responds OK.
         """
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         url = f"{self._client.base_url}/health"
         try:
@@ -690,8 +689,8 @@ def record_vpe_verification(
     result: str,
     reason: str = "",
     source: str = "unspecified",
-    audit_trail: Optional[DivisionAuditTrail] = None,
-) -> Optional[str]:
+    audit_trail: DivisionAuditTrail | None = None,
+) -> str | None:
     """Convenience wrapper to record a VPE verification result.
 
     Creates a DivisionAuditTrail on first call (lazy init) and reuses it.

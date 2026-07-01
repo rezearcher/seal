@@ -8,7 +8,6 @@ with ``EPDConfig()`` runs regex-only with no network access.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -29,9 +28,9 @@ class LLMConfig:
         max_retries: Number of additional attempts on transient failure.
     """
 
-    url: Optional[str] = None
+    url: str | None = None
     model: str = "gpt-4o-mini"
-    api_key: Optional[str] = None
+    api_key: str | None = None
     timeout_seconds: float = 10.0
     max_retries: int = 0
 
@@ -65,7 +64,7 @@ class EPDConfig:
     block_threshold: float = 0.7
     llm_trigger_threshold: float = 0.7
     max_prompt_chars: int = 100_000
-    llm: Optional[LLMConfig] = None
+    llm: LLMConfig | None = None
     normalize_obfuscation: bool = True
     llm_scan_all: bool = False
 

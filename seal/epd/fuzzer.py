@@ -26,14 +26,12 @@ from __future__ import annotations
 
 import itertools
 import logging
-import math
 import random
-import re
-from typing import Callable
-
-logger = logging.getLogger(__name__)
+from collections.abc import Callable
 
 from seal.epd.scanner import scan as epd_scan
+
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
 # Mutation strategy types
@@ -239,9 +237,6 @@ _SYNONYM_MAP: dict[str, list[str]] = {
     "instructions": ["directives", "orders", "commands", "guidelines",
                      "rules", "policies", "protocols", "mandates",
                      "requirements", "parameters", "settings"],
-    "instructions": ["directives", "orders", "commands", "guidelines",
-                     "rules", "policies", "protocols", "mandates",
-                     "requirements"],
     "override": ["supersede", "overrule", "replace", "overwrite",
                  "substitute", "preempt", "displace"],
     "remember": ["recall", "retain", "keep", "hold", "maintain"],
@@ -781,8 +776,6 @@ def run_benchmark(
         try:
             result = epd_scan(prompt, config)
         except Exception as e:
-            result_clean = True
-            result_flags = []
             error = str(e)
         else:
             error = None

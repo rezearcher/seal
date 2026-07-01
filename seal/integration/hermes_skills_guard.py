@@ -40,22 +40,17 @@ Integration with Hermes config.yaml:
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 try:
+    from seal.epd import EPDResult, epd_scan
     from seal.vpe import (
-        vpe_sign,
-        vpe_verify,
         VPEResult,
-        generate_keypair,
-        load_or_generate_keypair,
-        VPE_VERSION,
+        vpe_verify,
     )
-    from seal.epd import epd_scan, EPDResult, EPDFlag
     _SEAL_AVAILABLE = True
 except ImportError:
     _SEAL_AVAILABLE = False
@@ -85,7 +80,7 @@ class VPEGuardChain:
 
     def __init__(
         self,
-        public_key: Optional[bytes] = None,
+        public_key: bytes | None = None,
         mode: str = "audit",
         epd_enabled: bool = True,
         epd_min_confidence: float = 0.85,
@@ -112,7 +107,7 @@ class VPEGuardChain:
     # Stage 1: VPE Verify
     # ------------------------------------------------------------------
 
-    def check_vpe(self, envelope: Dict[str, Any]) -> VPEResult:
+    def check_vpe(self, envelope: dict[str, Any]) -> VPEResult:
         """Verify a VPE envelope.
 
         Returns VPEResult with valid=True/False.
@@ -153,10 +148,10 @@ class VPEGuardChain:
 
     def check_scope(
         self,
-        envelope: Dict[str, Any],
+        envelope: dict[str, Any],
         tool_name: str,
-        tool_args: Dict[str, Any],
-    ) -> Optional[str]:
+        tool_args: dict[str, Any],
+    ) -> str | None:
         """Check tool call against VPE envelope scope.
 
         Args:
@@ -184,7 +179,6 @@ class VPEGuardChain:
         if allowed_domains:
             url = tool_args.get("url", "") or tool_args.get("command", "")
             if url:
-                import re
                 if not any(domain in url for domain in allowed_domains):
                     return f"URL/command target not in allowed_domains: {allowed_domains}"
 
@@ -204,10 +198,10 @@ class VPEGuardChain:
     def check_all(
         self,
         prompt: str = "",
-        envelope: Optional[Dict[str, Any]] = None,
+        envelope: dict[str, Any] | None = None,
         tool_name: str = "",
-        tool_args: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        tool_args: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Run the full VPE+EPD security pipeline.
 
         Args:
@@ -222,7 +216,7 @@ class VPEGuardChain:
                 - reason (str): explanation if denied
                 - stages (dict): per-stage results
         """
-        stages: Dict[str, Any] = {}
+        stages: dict[str, Any] = {}
         tool_args = tool_args or {}
 
         # Stage 1: VPE
@@ -264,7 +258,7 @@ class VPEGuardChain:
 
         return self._decision("allow", "all checks passed", stages)
 
-    def _decision(self, verdict: str, reason: str, stages: Dict[str, Any]) -> Dict[str, Any]:
+    def _decision(self, verdict: str, reason: str, stages: dict[str, Any]) -> dict[str, Any]:
         """Build a decision dict."""
         return {
             "allowed": verdict == "allow",

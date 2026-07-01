@@ -16,15 +16,13 @@ from __future__ import annotations
 import json
 import os
 import re
-import struct
 import subprocess
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 from seal.audit import AuditLog
-from seal.core import vpe_sign, vpe_verify, generate_key_pair
+from seal.core import vpe_sign, vpe_verify
 
 # ---------------------------------------------------------------------------
 # Constants

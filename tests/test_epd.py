@@ -402,7 +402,7 @@ class TestFuzzer(unittest.TestCase):
             self.assertIn("strategy_category", m)
 
     def test_all_strategies_represented(self):
-        from seal.epd.fuzzer import generate_mutations, _STRATEGIES
+        from seal.epd.fuzzer import _STRATEGIES, generate_mutations
 
         muts = generate_mutations(target_count=1000)
         strategies_used = set(m["strategy"] for m in muts)
@@ -463,8 +463,10 @@ class TestFuzzer(unittest.TestCase):
         self.assertEqual(exit_code, 0)
 
     def test_main_json_output(self):
+        import io
+        import sys
+
         from seal.epd.fuzzer import main
-        import io, sys
 
         captured = io.StringIO()
         old_stdout = sys.stdout

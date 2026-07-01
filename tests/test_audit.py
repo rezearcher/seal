@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -64,7 +64,7 @@ def test_rotation(tmp_path):
     for i in range(10001):
         log.log_access(f"k{i}", "c")
 
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         lines = [ln for ln in fh.read().splitlines() if ln.strip()]
     assert len(lines) == 10000
 
@@ -146,7 +146,7 @@ def test_vpe_query_by_status(audit_path):
 def test_vpe_query_by_since(audit_path):
     """Query filtered by time range."""
     log = AuditLog(audit_path)
-    old_ts = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    old_ts = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
     # Pre-seed an older entry directly, then add a current one via the API.
     with open(audit_path, "w", encoding="utf-8") as fh:
         fh.write(
@@ -165,7 +165,7 @@ def test_vpe_query_by_since(audit_path):
         )
     log.log_vpe_verification("sha256:new", "user:rez", "agent:h", "valid")
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     recent = log.query(since=cutoff)
     assert len(recent) == 1
     assert recent[0]["envelope_hash"] == "sha256:new"
@@ -177,8 +177,8 @@ def test_vpe_query_by_since(audit_path):
 def test_vpe_query_by_status_and_since(audit_path):
     """Combined status + since filter."""
     log = AuditLog(audit_path)
-    old_valid = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
-    old_invalid = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    old_valid = (datetime.now(UTC) - timedelta(hours=3)).isoformat()
+    old_invalid = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
     with open(audit_path, "w", encoding="utf-8") as fh:
         for ts, hsh, result in [
             (old_valid, "sha256:oldvalid", "valid"),
@@ -202,7 +202,7 @@ def test_vpe_query_by_status_and_since(audit_path):
     log.log_vpe_verification("sha256:newvalid", "user:rez", "agent:h", "valid")
     log.log_vpe_verification("sha256:newinvalid", "user:rez", "agent:h", "invalid")
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     result = log.query(status="valid", since=cutoff)
     assert len(result) == 1
     assert result[0]["envelope_hash"] == "sha256:newvalid"
@@ -212,8 +212,8 @@ def test_time_based_rotation(tmp_path):
     """Entries older than max_age_days are pruned on rotation."""
     path = tmp_path / "audit.jsonl"
     log = AuditLog(str(path), max_age_days=30)
-    old_ts = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
-    recent_ts = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    old_ts = (datetime.now(UTC) - timedelta(days=40)).isoformat()
+    recent_ts = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(
             json.dumps(

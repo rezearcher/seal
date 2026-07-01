@@ -17,12 +17,11 @@ Protocol version: 1.0
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 import os
 import secrets
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Protocol constants
@@ -51,7 +50,7 @@ SIGNED_FIELDS = [
 # Types
 # ---------------------------------------------------------------------------
 
-VPEEnvelope = Dict[str, Any]
+VPEEnvelope = dict[str, Any]
 """A signed VPE envelope as a JSON-serializable dict."""
 
 
@@ -83,7 +82,7 @@ class VPEResult:
 # Ed25519 key helpers
 # ---------------------------------------------------------------------------
 
-_KEY_CACHE: Dict[str, tuple] = {}
+_KEY_CACHE: dict[str, tuple] = {}
 
 
 def _ensure_nacl() -> bool:
@@ -108,7 +107,7 @@ def _nacl_sign_available() -> bool:
     return _ensure_nacl()
 
 
-def generate_keypair() -> Tuple[bytes, bytes]:
+def generate_keypair() -> tuple[bytes, bytes]:
     """Generate a new Ed25519 keypair.
 
     Returns:
@@ -125,9 +124,9 @@ def generate_keypair() -> Tuple[bytes, bytes]:
         from cryptography.hazmat.primitives.asymmetric import ed25519
         from cryptography.hazmat.primitives.serialization import (
             Encoding,
+            NoEncryption,
             PrivateFormat,
             PublicFormat,
-            NoEncryption,
         )
         private_key = ed25519.Ed25519PrivateKey.generate()
         public_key = private_key.public_key()
@@ -160,13 +159,6 @@ def _sign_bytes(data: bytes, private_key: bytes) -> bytes:
         pk_from_seed, sk_full = nacl.bindings.crypto_sign_seed_keypair(private_key)
         return nacl.bindings.crypto_sign(data, sk_full)[:64]
     except ImportError:
-        from cryptography.hazmat.primitives.asymmetric import ed25519
-        from cryptography.hazmat.primitives.serialization import (
-            Encoding,
-            PrivateFormat,
-            PublicFormat,
-            NoEncryption,
-        )
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
         key = Ed25519PrivateKey.from_private_bytes(private_key)
         return key.sign(data)
@@ -193,7 +185,6 @@ def _verify_bytes(data: bytes, signature: bytes, public_key: bytes) -> bool:
             return False
     except ImportError:
         from cryptography.exceptions import InvalidSignature
-        from cryptography.hazmat.primitives.asymmetric import ed25519
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         try:
             key = Ed25519PublicKey.from_public_bytes(public_key)
@@ -241,12 +232,12 @@ def vpe_sign(
     audience: str,
     *,
     private_key: bytes,
-    scope: Optional[Dict[str, Any]] = None,
-    doc_sha256: Optional[str] = None,
+    scope: dict[str, Any] | None = None,
+    doc_sha256: str | None = None,
     ttl_seconds: int = DEFAULT_TTL_SECONDS,
-    nonce: Optional[str] = None,
+    nonce: str | None = None,
     counter: int = 1,
-    public_key: Optional[bytes] = None,
+    public_key: bytes | None = None,
 ) -> VPEEnvelope:
     """Create a signed VPE envelope.
 
@@ -327,7 +318,7 @@ _ERROR_TAMPERED = "envelope content has been tampered with (signature mismatch)"
 _ERROR_PUBLIC_KEY_MISSING = "no public_key in envelope and no public_key provided"
 
 
-def _check_required_fields(envelope: VPEEnvelope) -> Optional[str]:
+def _check_required_fields(envelope: VPEEnvelope) -> str | None:
     """Check that all SIGNED_FIELDS are present.
 
     Returns None if OK, or an error string.
@@ -338,7 +329,7 @@ def _check_required_fields(envelope: VPEEnvelope) -> Optional[str]:
     return None
 
 
-def _check_version(envelope: VPEEnvelope) -> Optional[str]:
+def _check_version(envelope: VPEEnvelope) -> str | None:
     """Check that vpe_version is compatible."""
     version = envelope.get("vpe_version", "")
     if version != VPE_VERSION:
@@ -346,7 +337,7 @@ def _check_version(envelope: VPEEnvelope) -> Optional[str]:
     return None
 
 
-def _check_expiry(envelope: VPEEnvelope) -> Optional[str]:
+def _check_expiry(envelope: VPEEnvelope) -> str | None:
     """Check TTL expiry."""
     ttl = envelope.get("ttl_seconds", 0)
     if ttl <= 0:
@@ -360,7 +351,7 @@ def _check_expiry(envelope: VPEEnvelope) -> Optional[str]:
     return None
 
 
-def _check_nonce_replay(nonce: str, seen_nonces: Optional[set] = None) -> Optional[str]:
+def _check_nonce_replay(nonce: str, seen_nonces: set | None = None) -> str | None:
     """Check if a nonce has been seen before (replay prevention).
 
     Args:
@@ -377,7 +368,7 @@ def _check_nonce_replay(nonce: str, seen_nonces: Optional[set] = None) -> Option
     return None
 
 
-def _check_counter_monotonic(counter: int, last_counter: Optional[int] = None) -> Optional[str]:
+def _check_counter_monotonic(counter: int, last_counter: int | None = None) -> str | None:
     """Check that the counter is monotonic.
 
     Args:
@@ -392,7 +383,7 @@ def _check_counter_monotonic(counter: int, last_counter: Optional[int] = None) -
     return None
 
 
-def _check_scope(envelope: VPEEnvelope, actual_args: Optional[Dict[str, Any]] = None) -> Optional[str]:
+def _check_scope(envelope: VPEEnvelope, actual_args: dict[str, Any] | None = None) -> str | None:
     """Check scope constraints against actual arguments.
 
     Args:
@@ -426,11 +417,11 @@ def _check_scope(envelope: VPEEnvelope, actual_args: Optional[Dict[str, Any]] = 
 def vpe_verify(
     envelope: VPEEnvelope,
     *,
-    public_key: Optional[bytes] = None,
-    seen_nonces: Optional[set] = None,
-    last_counter: Optional[int] = None,
-    actual_args: Optional[Dict[str, Any]] = None,
-    skip_checks: Optional[List[str]] = None,
+    public_key: bytes | None = None,
+    seen_nonces: set | None = None,
+    last_counter: int | None = None,
+    actual_args: dict[str, Any] | None = None,
+    skip_checks: list[str] | None = None,
 ) -> VPEResult:
     """Verify a VPE envelope.
 
@@ -553,7 +544,7 @@ def save_keypair(private_key: bytes, public_key: bytes, path: str) -> None:
         os.chmod(p, 0o600)
 
 
-def load_keypair(path: str) -> Tuple[bytes, bytes]:
+def load_keypair(path: str) -> tuple[bytes, bytes]:
     """Load a keypair from disk.
 
     Args:
@@ -565,15 +556,15 @@ def load_keypair(path: str) -> Tuple[bytes, bytes]:
     priv_path = os.path.join(path, "vpe_private.key")
     pub_path = os.path.join(path, "vpe_public.key")
 
-    with open(priv_path, "r") as f:
+    with open(priv_path) as f:
         private_key = bytes.fromhex(f.read().strip())
-    with open(pub_path, "r") as f:
+    with open(pub_path) as f:
         public_key = bytes.fromhex(f.read().strip())
 
     return (private_key, public_key)
 
 
-def load_or_generate_keypair(path: str) -> Tuple[bytes, bytes]:
+def load_or_generate_keypair(path: str) -> tuple[bytes, bytes]:
     """Load existing keypair from disk, or generate and save a new one.
 
     Args:

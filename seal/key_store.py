@@ -18,7 +18,6 @@ Status values:
 
 from __future__ import annotations
 
-import os
 import secrets
 import sqlite3
 import threading
@@ -26,7 +25,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from seal.core import generate_key_pair, _load_private_key, _load_public_key
+from seal.core import _load_private_key, generate_key_pair
 
 # ---------------------------------------------------------------------------
 # Defaults

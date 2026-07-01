@@ -7,11 +7,11 @@ import time
 import pytest
 
 from seal.core import (
+    generate_key_pair,
     vpe_sign,
     vpe_sign_hmac,
     vpe_verify,
     vpe_verify_hmac,
-    generate_key_pair,
 )
 from seal.key_manager import KeyManager
 
@@ -138,8 +138,10 @@ class TestVerifyWithLifecycle:
             assert result["valid"] is False
             assert "no_verification_keys" in result["reason"]
         finally:
-            try: os.unlink(tmp)
-            except OSError: pass
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
 class TestKeyExpiryDetection:
@@ -158,8 +160,10 @@ class TestKeyExpiryDetection:
         try:
             assert KeyManager(db_path=tmp).check_expired_active_key() is None
         finally:
-            try: os.unlink(tmp)
-            except OSError: pass
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
     def test_premature_key_detected(self, km):
         now = int(time.time())
@@ -205,8 +209,10 @@ class TestRotationDaemon:
             KeyManager.run_rotation_daemon(db_path=tmp, once=True)
             assert KeyManager(db_path=tmp).get_active_key() is not None
         finally:
-            try: os.unlink(tmp)
-            except OSError: pass
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
     def test_daemon_once_rotates_expired_key(self, km):
         now = int(time.time())

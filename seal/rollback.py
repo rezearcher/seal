@@ -14,14 +14,12 @@ On rollback:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
 import shutil
-import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -71,7 +69,7 @@ def _seal_backup_config() -> Path:
 
 
 def _utcnow() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +465,7 @@ def cmd_status() -> RollbackReport:
 
     # Show active signing key from KeyManager
     try:
-        from seal.key_manager import KeyManager, STATUS_ACTIVE
+        from seal.key_manager import KeyManager
 
         km = KeyManager()
         active = km.get_active_key()

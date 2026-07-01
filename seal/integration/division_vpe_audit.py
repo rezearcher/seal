@@ -35,11 +35,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class DivisionVPEAudit:
         self,
         audit_log: Any = None,
         conversation_id: str = DEFAULT_CONVERSATION_ID,
-        remember_func: Optional[Callable] = None,
+        remember_func: Callable | None = None,
     ):
         """Initialize DivisionVPEAudit.
 
@@ -106,10 +106,10 @@ class DivisionVPEAudit:
 
         self.conversation_id = conversation_id
         self._remember_func = remember_func
-        self._division_available: Optional[bool] = None  # lazy check
+        self._division_available: bool | None = None  # lazy check
 
         # Track episode IDs for cross-referencing
-        self._last_episode_id: Optional[str] = None
+        self._last_episode_id: str | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -122,8 +122,8 @@ class DivisionVPEAudit:
         result: str,
         reason: str = "",
         tool_name: str = "",
-        audit_id: Optional[str] = None,
-        extra: Optional[Dict[str, Any]] = None,
+        audit_id: str | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> str:
         """Record a VPE verification result.
 
@@ -153,9 +153,9 @@ class DivisionVPEAudit:
 
         audit_id = audit_id or _generate_audit_id()
         timestamp = time.time()
-        timestamp_iso = datetime.now(timezone.utc).isoformat()
+        timestamp_iso = datetime.now(UTC).isoformat()
 
-        record: Dict[str, Any] = {
+        record: dict[str, Any] = {
             "audit_id": audit_id,
             "envelope_hash": envelope_hash,
             "issuer": issuer,
@@ -204,10 +204,10 @@ class DivisionVPEAudit:
 
     def record_from_result(
         self,
-        envelope: Dict[str, Any],
+        envelope: dict[str, Any],
         result_obj: Any,
         tool_name: str = "",
-        audit_id: Optional[str] = None,
+        audit_id: str | None = None,
     ) -> str:
         """Convenience: record from a VPE envelope + VPEResult.
 
@@ -225,6 +225,7 @@ class DivisionVPEAudit:
         """
         # Compute hash of the canonical envelope
         import hashlib
+
         from seal.vpe import _canonical_envelope
 
         try:
@@ -263,11 +264,11 @@ class DivisionVPEAudit:
 
     def query_local(
         self,
-        result_filter: Optional[str] = None,
-        issuer_filter: Optional[str] = None,
-        since: Optional[float] = None,
+        result_filter: str | None = None,
+        issuer_filter: str | None = None,
+        since: float | None = None,
         limit: int = 50,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Query the local JSONL audit log.
 
         Args:
@@ -310,8 +311,8 @@ class DivisionVPEAudit:
         self,
         query: str,
         limit: int = 50,
-        search_func: Optional[Callable] = None,
-    ) -> List[Dict[str, Any]]:
+        search_func: Callable | None = None,
+    ) -> list[dict[str, Any]]:
         """Query Division memory for VPE audit episodes.
 
         Args:
@@ -385,7 +386,7 @@ class DivisionVPEAudit:
     # Internal — Division write
     # ------------------------------------------------------------------
 
-    def _write_division(self, record: Dict[str, Any]) -> Optional[str]:
+    def _write_division(self, record: dict[str, Any]) -> str | None:
         """Write an audit record to Division memory.
 
         Returns the episode_id string on success, or None on failure.

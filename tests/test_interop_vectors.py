@@ -8,7 +8,7 @@ TypeScript, Go, and Rust ports.
 import json
 from pathlib import Path
 
-from seal.core import vpe_verify, vpe_verify_hmac, generate_key_pair
+from seal.core import vpe_verify, vpe_verify_hmac
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "vectors"
 FIXTURE_PATH = FIXTURE_DIR / "vpe_vectors.json"
@@ -54,14 +54,12 @@ def _run_vector_test(vector: dict, fixture: dict):
 def test_all_vectors():
     """Verify every vector in the fixture."""
     fixture = load_fixture()
-    public_key = bytes.fromhex(fixture["ed25519_public_key_hex"])
     for vec in fixture["vectors"]:
         _run_vector_test(vec, fixture)
 
 
 # Generate individual test functions for every vector so pytest
 # can report them separately.
-import pytest
 
 
 def _make_vector_test(vec: dict, fixture: dict):
