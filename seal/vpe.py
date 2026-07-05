@@ -40,9 +40,11 @@ SIGNED_FIELDS = [
     "issuer",
     "audience",
     "doc_sha256",
+    "iat",
     "ttl_seconds",
     "nonce",
     "counter",
+    "cert_chain",
 ]
 """Fields that are signed in order (excluding 'signature' itself)."""
 
@@ -200,12 +202,14 @@ def _verify_bytes(data: bytes, signature: bytes, public_key: bytes) -> bool:
 
 
 def _canonical_json(obj: Any) -> bytes:
-    """Serialize to canonical JSON (sorted keys, no whitespace).
+    """Serialize to canonical JSON using key insertion order (no whitespace).
 
-    This is critical for signature verification — both signer and verifier
-    must produce identical bytes.
+    This matches core.py's approach: field order is driven by the caller
+    (_canonical_envelope builds payload in SIGNED_FIELDS order), NOT
+    alphabetical sort_keys. Both signer and verifier must produce
+    identical bytes.
     """
-    return json.dumps(obj, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(obj, separators=(",", ":"), sort_keys=False).encode("utf-8")
 
 
 def _canonical_envelope(envelope: VPEEnvelope, skip_signature: bool = True) -> bytes:
@@ -217,7 +221,11 @@ def _canonical_envelope(envelope: VPEEnvelope, skip_signature: bool = True) -> b
     payload = {}
     for key in SIGNED_FIELDS:
         if key in envelope:
-            payload[key] = envelope[key]
+            value = envelope[key]
+            # Match core.py: omit cert_chain when None
+            if key == "cert_chain" and value is None:
+                continue
+            payload[key] = value
     return _canonical_json(payload)
 
 
@@ -289,9 +297,10 @@ def vpe_sign(
         "audience": audience,
         "doc_sha256": doc_sha256,
         "ttl_seconds": ttl_seconds,
-        "issued_at": int(time.time()),
+        "iat": int(time.time()),
         "nonce": nonce,
         "counter": counter,
+        "cert_chain": None,
     }
 
     if public_key is not None:
@@ -342,7 +351,7 @@ def _check_expiry(envelope: VPEEnvelope) -> str | None:
     ttl = envelope.get("ttl_seconds", 0)
     if ttl <= 0:
         return None  # no expiry
-    issued_at = envelope.get("issued_at", 0)
+    issued_at = envelope.get("iat", 0)
     if issued_at <= 0:
         return None  # no timestamp, skip TTL check
     now = int(time.time())
@@ -429,7 +438,7 @@ def vpe_verify(
         1. Required fields present
         2. Crypto library available
         3. Protocol version match
-        4. TTL expiry (if ttl_seconds > 0 and issued_at set)
+        4. TTL expiry (if ttl_seconds > 0 and iat set)
         5. Signature validity
         6. Nonce replay (if seen_nonces provided)
         7. Counter monotonic (if last_counter provided)

@@ -453,7 +453,7 @@ class DivisionVPESigner:
                     "audience": "division:memory",
                     "doc_sha256": "",
                     "ttl_seconds": 86400 * 365,
-                    "issued_at": signed_at,
+                    "iat": signed_at,
                     "nonce": value.get("nonce", ""),
                     "counter": 1,
                     "signature": signature,

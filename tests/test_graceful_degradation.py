@@ -60,10 +60,10 @@ def signed_envelope(keys):
 
 @pytest.fixture
 def expired_envelope(keys):
-    """Produce an envelope with a TTL that has already expired (issued_at in the past)."""
+    """Produce an envelope with a TTL that has already expired (iat in the past)."""
     sk, pk = keys
     past_time = int(time.time()) - 3600  # 1 hour ago
-    # We need to override the issued_at — build the envelope manually
+    # We need to override the iat — build the envelope manually
 
     from seal.vpe import _canonical_envelope, _sign_bytes
 
@@ -75,7 +75,7 @@ def expired_envelope(keys):
         "audience": "agent:hermes-default",
         "doc_sha256": "deadbeef",
         "ttl_seconds": 60,   # 60 second TTL
-        "issued_at": past_time,
+        "iat": past_time,
         "nonce": "expired-nonce-test",
         "counter": 1,
     }

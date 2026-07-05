@@ -294,7 +294,7 @@ class VPEMiddleware:
     def _check_envelope_expiry(self, envelope: dict[str, Any]) -> str | None:
         """Check if an envelope has expired based on TTL and first-seen time.
 
-        Since v1.0 envelopes may or may not carry an ``issued_at`` field,
+        Since v1.0 envelopes carry an ``iat`` field (or legacy ``issued_at``),
         we maintain our own first-seen timestamp per nonce. This catches
         replay of expired envelopes.
 
@@ -320,12 +320,12 @@ class VPEMiddleware:
                 return f"envelope expired: {elapsed:.0f}s elapsed > {ttl}s TTL"
             return None  # still within TTL
 
-        # Also check native issued_at field if present (from seal.vpe)
-        issued_at = envelope.get("issued_at")
+        # Check native iat field (primary) or legacy issued_at (backward compat)
+        issued_at = envelope.get("iat") or envelope.get("issued_at")
         if isinstance(issued_at, (int, float)) and issued_at > 0:
             elapsed = time.time() - issued_at
             if elapsed > ttl:
-                return f"envelope expired: {elapsed:.0f}s elapsed > {ttl}s TTL (issued_at)"
+                return f"envelope expired: {elapsed:.0f}s elapsed > {ttl}s TTL (iat)"
             return None
 
         # First time seeing this nonce — record it and treat as fresh

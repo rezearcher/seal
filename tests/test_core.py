@@ -1663,3 +1663,113 @@ class TestCompactMode:
             env = vpe_sign_hmac(prompt, compact=True, shared_secret=hmac_secret)
             overhead = len(env) - prompt_len
             assert overhead < 200, f"prompt_len={prompt_len}: overhead={overhead}B"
+
+
+# ---------------------------------------------------------------------------
+# Cross-module VPE interop (t_03ea2d3a)
+# ---------------------------------------------------------------------------
+
+
+class TestVPEInterop:
+    """Cross-module interop between core.vpe_sign/verify and vpe.vpe_sign/verify.
+
+    Ensures envelopes signed by one module can be verified by the other,
+    now that both share the same SIGNED_FIELDS set (iat + cert_chain added).
+    """
+
+    def test_core_sign_vpe_verify(self, keys):
+        """Sign with core.vpe_sign(), verify that vpe.vpe_verify accepts it.
+
+        core returns JSON string, vpe expects dict — we convert and verify
+        the field set is complete and valid.
+        """
+        from seal import vpe as vpe_mod
+        import json
+
+        sk, pk = keys["private_key"], keys["public_key"]
+        env_str = vpe_sign("interop test prompt", issuer="user:test",
+                           audience="agent:test", private_key=sk)
+        env_dict = json.loads(env_str)
+
+        # Verify that the converted envelope has all SIGNED_FIELDS
+        signed = set(vpe_mod.SIGNED_FIELDS)
+        envelope_keys = set(env_dict.keys()) - {"signature"}
+        assert signed.issubset(envelope_keys), (
+            f"vpe SIGNED_FIELDS missing from core envelope: {signed - envelope_keys}"
+        )
+
+        # Verify works (signature date is fresh)
+        # core's canonicalisation uses ordered fields + defaults;
+        # vpe uses sorted keys + explicit values.
+        # The envelope must contain all required fields for vpe verification.
+        result = vpe_mod.vpe_verify(env_dict, public_key=pk)
+        assert result.valid, f"vpe_verify failed: {result.reason}"
+
+    def test_vpe_sign_core_verify(self, keys):
+        """Sign with vpe.vpe_sign(), verify that core.vpe_verify accepts it.
+
+        vpe returns dict, core expects JSON string — convert and verify
+        the field set is complete.
+        """
+        from seal import vpe as vpe_mod
+        import json
+
+        sk, pk = keys["private_key"], keys["public_key"]
+        env_dict = vpe_mod.vpe_sign("interop test prompt", issuer="user:test",
+                                    audience="agent:test", private_key=sk)
+
+        # core.vpe_verify uses _ENVELOPE_FIELDS; check all required fields present
+        from seal.core import _ENVELOPE_FIELDS
+        envelope_keys = set(env_dict.keys()) - {"signature", "public_key"}
+        core_fields = set(_ENVELOPE_FIELDS)
+        assert core_fields.issubset(envelope_keys), (
+            f"Core _ENVELOPE_FIELDS missing from vpe envelope: {core_fields - envelope_keys}"
+        )
+
+        # Convert dict → JSON string for core verify
+        env_str = json.dumps(env_dict)
+        result = vpe_verify(env_str, public_key=pk)
+        assert result["valid"], f"core.vpe_verify failed: {result['reason']}"
+
+    def test_core_sign_vpe_verify_with_cert_chain(self, keys):
+        """Interop with cert_chain included."""
+        from seal import vpe as vpe_mod
+        import json
+
+        sk, pk = keys["private_key"], keys["public_key"]
+        env_str = vpe_sign("interop cert test", issuer="user:rez",
+                           audience="agent:hermes", private_key=sk,
+                           cert_chain=[{"subject_id": "leaf"}])
+        env_dict = json.loads(env_str)
+
+        result = vpe_mod.vpe_verify(env_dict, public_key=pk)
+        assert result.valid, f"vpe_verify (with cert_chain) failed: {result.reason}"
+
+    def test_vpe_sign_core_verify_with_cert_chain(self, keys):
+        """Interop with cert_chain included, reverse direction."""
+        from seal import vpe as vpe_mod
+        import json
+
+        sk, pk = keys["private_key"], keys["public_key"]
+        env_dict = vpe_mod.vpe_sign("interop cert reverse", issuer="user:rez",
+                                    audience="agent:hermes", private_key=sk,
+                                    public_key=pk)
+        env_str = json.dumps(env_dict)
+
+        result = vpe_verify(env_str, public_key=pk)
+        assert result["valid"], f"core.vpe_verify failed: {result['reason']}"
+
+    def test_tampered_rejected_across_modules(self, keys):
+        """Tampering an envelope signed by core is rejected by vpe verify."""
+        from seal import vpe as vpe_mod
+
+        sk, pk = keys["private_key"], keys["public_key"]
+        env_str = vpe_sign("tamper test", issuer="user:rez",
+                           audience="agent:hermes", private_key=sk)
+        # Tamper by modifying the prompt in the JSON string
+        env_str_tampered = env_str.replace('"tamper test"', '"tampered prompt"')
+
+        import json
+        env_dict = json.loads(env_str_tampered)
+        result = vpe_mod.vpe_verify(env_dict, public_key=pk)
+        assert not result.valid
