@@ -225,6 +225,9 @@ def _canonical_envelope(envelope: VPEEnvelope, skip_signature: bool = True) -> b
             # Match core.py: omit cert_chain when None
             if key == "cert_chain" and value is None:
                 continue
+            # Match core.py: sort scope keys lexicographically for deterministic JSON
+            if key == "scope" and isinstance(value, dict):
+                value = dict(sorted(value.items()))
             payload[key] = value
     return _canonical_json(payload)
 
