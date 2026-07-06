@@ -1,6 +1,6 @@
 1|# Seal — Verified Prompt Envelope Protocol & AI Agent Security
 2|
-3|> **Status:** Phases 1–9 core capabilities **implemented and tested** — VPE Core (Ed25519 + HMAC + multi-sig + hierarchical cert chains + hardware signing), EPD Scanner (regex + LLM + Unicode-smuggling defense), Secrets Broker, persistent stores, full key lifecycle + rotation daemon, Hermes/Division integration, rollback, adversarial fuzzer, and benchmarks. **684 tests collected.**
+3|> **Status:** Phases 1–9 core capabilities **implemented and tested** — VPE Core (Ed25519 + HMAC + multi-sig + hierarchical cert chains + hardware signing), EPD Scanner (regex + LLM + Unicode-smuggling defense), Secrets Broker, persistent stores, full key lifecycle + rotation daemon, Hermes/Division integration, rollback, adversarial fuzzer, and benchmarks. **688 tests collected.**
 4|> **Remaining:** external adoption only — P8 (cross-language port **publishing** + OWASP/MCP standardization) and P10 (production-bake). Cross-language ports (TS/Go/Rust) are **implemented in-repo with their own test suites** (`vpe-ts/`, `vpe-go/`, `vpe-rust/`, P8.5a, commits `bb9896c` + later) AND now share a **single canonical cross-language test-vector fixture** (`tests/vectors/vpe_vectors.json`, 22 vectors, generated from the Python reference) consumed by an automated interop test in all four languages (commits `f7c2af4` fixture+tests, `e50ce42`/`f575146` TTL fix). The ports are **not yet published to package registries**. See per-phase status tags below.
 5|> **2026-07-05 sync — new board task "Publish seal-vpe to PyPI (complete what `t_0c0fff25` left undone)" marked COMPLETE, but the publish is UNVERIFIED (unverified-gap):** The task title is a *claim*, not evidence. This sync found **no local-code change** consistent with a fresh publish since the last sync — `pyproject.toml` unchanged (Jul 1), the `dist/` artifacts unchanged (`seal_vpe-0.1.0-{whl,tar.gz}`, Jun 28), `publish.yml` unchanged, project version still `0.1.0`. A successful trusted-publish re-run leaves no local trace *either way*, so absence-of-change cannot confirm success — and the only authoritative check (the live PyPI registry) was **permission-blocked this session** (both `curl https://pypi.org/pypi/seal-vpe/json` and WebFetch were denied), so no HTTP 200/404 could be observed. **As of the last live check (prior sync, 2026-07-01) `seal-vpe` was 404 on PyPI.** Do NOT treat this task's completion as "seal-vpe is on PyPI" until someone confirms `https://pypi.org/pypi/seal-vpe/json` → 200 (or `pip install seal-vpe` succeeds). To close: confirm the PyPI trusted-publisher/pending-publisher is configured for `seal-vpe`, re-run/observe `publish.yml`, then re-verify the registry returns 200.
 >
@@ -128,13 +128,13 @@
 126|<a id="whats-built-current-state"></a>
 127|## What's Built (current state)
 128|
-129|> Authoritative inventory of modules that physically exist, with the test file that exercises each. **684 tests collected.** Keep this table current when modules land — it is the anti-confusion anchor for the roadmap below.
+129|> Authoritative inventory of modules that physically exist, with the test file that exercises each. **688 tests collected.** Keep this table current when modules land — it is the anti-confusion anchor for the roadmap below.
 130|
-131|### VPE Core — signing & verification (Phase 1, plus 5.4 / 9.1 / 9.3 / 9.4)
-132|| Module | LOC | Provides | Tests |
-133||--------|-----|----------|-------|
-134|| `seal/core.py` | 1229 | `vpe_sign`/`vpe_verify` (Ed25519), `vpe_sign_hmac`/`vpe_verify_hmac` (HMAC-SHA256, P5.4), `vpe_sign_multi`/`vpe_verify_multi` (N-of-M multi-sig, P9.3), `verify_certificate`/`verify_cert_chain` (hierarchical issuer chains, P9.1), `vpe_sign_hardware`/`vpe_verify_hardware` (P9.4), scope/nonce/counter/TTL enforcement | `test_core.py` (146), `test_crypto_bypass.py` (54) |
-135|| `seal/vpe.py` | 589 | Envelope dataclasses, canonical JSON, multi-backend Ed25519 (NaCl or `cryptography`) | `test_core.py` |
+### VPE Core — signing & verification (Phase 1, plus 5.4 / 9.1 / 9.3 / 9.4)
+| Module | LOC | Provides | Tests |
+||--------|-----|----------|-------|
+|| `seal/core.py` | 1229 | `vpe_sign`/`vpe_verify` (Ed25519), `vpe_sign_hmac`/`vpe_verify_hmac` (HMAC-SHA256, P5.4), `vpe_sign_multi`/`vpe_verify_multi` (N-of-M multi-sig, P9.3), `verify_certificate`/`verify_cert_chain` (hierarchical issuer chains, P9.1), `vpe_sign_hardware`/`vpe_verify_hardware` (P9.4), scope/nonce/counter/TTL enforcement | `test_core.py` (146), `test_crypto_bypass.py` (54) |
+|| `seal/vpe.py` | 589 | Envelope dataclasses, canonical JSON, multi-backend Ed25519 (NaCl or `cryptography`). **t_03ea2d3a:** `SIGNED_FIELDS` aligned with core.py (added `iat`, `cert_chain` → 11 fields); `issued_at` renamed to `iat`; `_canonical_json` now uses key insertion order (matching core's `_ENVELOPE_FIELDS`); `vpe_sign()` always includes `cert_chain: None`; scope keys sorted for byte-for-byte canonical match. +3 lines, 5 new interop tests (688 total). | `test_core.py` |
 136|| `seal/cli.py` | 649 | 18-command CLI (see below) | e2e |
 137|
 138|### EPD Scanner — injection detection (Phase 2, plus 7.1 / 7.4)
