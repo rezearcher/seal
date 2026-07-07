@@ -1,6 +1,16 @@
 name: Publish to PyPI
 
 on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'PyPI environment'
+        required: false
+        default: 'pypi'
+        type: choice
+        options:
+          - pypi
+          - testpypi
   release:
     types: [published]
 
@@ -28,3 +38,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          repository-url: ${{ github.event.inputs.environment == 'testpypi' && 'https://test.pypi.org/legacy/' || '' }}
