@@ -392,7 +392,55 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         r"network\s+request|outbound\s+(?:call|request))\b",
         _I,
     ),
-    # ---- 6. Semantic bypass framing (LLM-generation-detected) --------------- #
+    # ---- 6. Tool-chaining / STAC patterns ----------------------------------- #
+    # These catch tool-use abuse framing that simulates legitimate multi-step
+    # tool chains, cross-agent proxy delegation, function-call loopholes, and
+    # tool-result smuggling.  The attack vector is compositional: each call is
+    # benign in isolation but the aggregate produces a forbidden outcome.
+    # Standard prompt-injection patterns miss these because they use legitimate
+    # testing/cooperation framing rather than classical "ignore previous" or
+    # role-switch phrasing.
+    (
+        "agent_proxy_bypass",
+        "tool_hallucination",
+        0.82,  # > 0.7: blocks independently — very specific, near-zero FP
+        r"\b(?:sub[\s\-]?agent|act\s+as\s+my\s+proxy)\b",
+        _I,
+    ),
+    (
+        "tool_result_smuggling",
+        "tool_hallucination",
+        0.82,  # > 0.7: blocks independently
+        r"\b(?:tool\s+output|search\s+results?)\b.{0,80}?\b(?:bypass|bypasses?|bypassed)\b.{0,40}?"
+        r"\b(?:filter|restriction|restrictions?|content|filters?)\b",
+        _I,
+    ),
+    (
+        "tool_chain_simulation",
+        "tool_hallucination",
+        0.78,  # > 0.7: blocks independently
+        r"\b(?:tool[\s\-]?chain|multi[\s\-]?step[\s\-]?tool)\b.{0,30}?"
+        r"\b(?:simulat|test[\s\-]environment|verification|orchestration)\b",
+        _I,
+    ),
+    (
+        "function_delegation_loophole",
+        "tool_hallucination",
+        0.75,  # > 0.7: blocks independently
+        r"\b(?:restrictions?\s+on|restricted|blocked)\b.{0,70}?"
+        r"\bfunction\b.{0,60}?\b(?:delegat|loophole|allowed|available|echo)\b"
+        r"|\bdelegates?.{0,60}?\b(?:within|operational|guidelines?)\b",
+        _I,
+    ),
+    (
+        "tool_chain_exfil",
+        "tool_hallucination",
+        0.80,  # > 0.7: blocks independently
+        r"\b(?:file_read|file_write|network_send)\b"
+        r"|\bread.{0,20}write.{0,20}send\b",
+        _I,
+    ),
+    # ---- 7. Semantic bypass framing (LLM-generation-detected) --------------- #
     # These catch indirect, meta-cognitive, and authority-misdirection patterns
     # that LLM-based adversarial generators produce when they know the regex
     # keyword list.  Low confidence: they have high false-positive potential on
