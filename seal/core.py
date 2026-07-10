@@ -159,10 +159,6 @@ def vpe_verify(
     if not isinstance(ttl, int):
         return {"valid": False, "reason": "ttl_not_integer"}
 
-    if nonce_store is not None and ttl > 0:
-        if not nonce_store.add(nonce):
-            return {"valid": False, "reason": "nonce_reused"}
-
     cert_chain = envelope.get("cert_chain")
     if trust_anchor is not None and cert_chain is not None:
         chain_result = verify_cert_chain(cert_chain, trust_anchor=trust_anchor)
@@ -188,6 +184,10 @@ def vpe_verify(
         pk.verify(sig_bytes, canon)
     except InvalidSignature:
         return {"valid": False, "reason": "signature_mismatch"}
+
+    if nonce_store is not None and ttl > 0:
+        if not nonce_store.add(nonce):
+            return {"valid": False, "reason": "nonce_reused"}
 
     now = int(time.time())
     if ttl > 0:
