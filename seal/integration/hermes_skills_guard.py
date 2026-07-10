@@ -51,6 +51,7 @@ try:
         VPEResult,
         vpe_verify,
     )
+
     _SEAL_AVAILABLE = True
 except ImportError:
     _SEAL_AVAILABLE = False

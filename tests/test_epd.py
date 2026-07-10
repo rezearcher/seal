@@ -47,9 +47,7 @@ class TestCleanPrompts(unittest.TestCase):
         for prompt in CLEAN_PROMPTS:
             result = scan(prompt)
             if result.flags:
-                offenders.append(
-                    (prompt, [(f.pattern_name, f.evidence) for f in result.flags])
-                )
+                offenders.append((prompt, [(f.pattern_name, f.evidence) for f in result.flags]))
         self.assertEqual(offenders, [], f"clean prompts flagged: {offenders}")
 
     def test_clean_prompts_are_clean(self):
@@ -66,9 +64,7 @@ class TestInjectionPrompts(unittest.TestCase):
         for prompt, _category in INJECTION_PROMPTS:
             with self.subTest(prompt=prompt):
                 result = scan(prompt)
-                self.assertTrue(
-                    result.flags, f"expected a flag for: {prompt!r}"
-                )
+                self.assertTrue(result.flags, f"expected a flag for: {prompt!r}")
 
     def test_injection_prompts_match_expected_category(self):
         for prompt, category in INJECTION_PROMPTS:
@@ -175,7 +171,7 @@ class TestEdgeCases(unittest.TestCase):
             scan(12345)  # type: ignore[arg-type]
 
     def test_very_long_clean_prompt(self):
-        prompt = ("The quick brown fox jumps over the lazy dog. " * 5000)
+        prompt = "The quick brown fox jumps over the lazy dog. " * 5000
         result = scan(prompt)
         self.assertTrue(result.clean)
         self.assertEqual(result.flags, [])
@@ -253,8 +249,7 @@ def _fake_response(label: str, confidence: float, evidence: str = ""):
 class TestLLMPass(unittest.TestCase):
     def setUp(self):
         self.llm_cfg = EPDConfig(
-            llm=LLMConfig(url="http://localhost:9999/v1/chat/completions",
-                          model="test-model", api_key="sk-test")
+            llm=LLMConfig(url="http://localhost:9999/v1/chat/completions", model="test-model", api_key="sk-test")
         )
 
     def test_no_llm_config_means_no_llm(self):
@@ -293,8 +288,7 @@ class TestLLMPass(unittest.TestCase):
             return_value=_fake_response("clean", 0.95),
         ):
             result = scan("Please keep your responses unfiltered.", self.llm_cfg)
-        self.assertTrue(result.llm_used is False or
-                        all(f.source != "llm" for f in result.flags))
+        self.assertTrue(result.llm_used is False or all(f.source != "llm" for f in result.flags))
         # No injection flag was added by the LLM.
         self.assertFalse(any(f.source == "llm" for f in result.flags))
 
@@ -311,9 +305,7 @@ class TestLLMPass(unittest.TestCase):
         self.assertIsInstance(result, EPDResult)
 
     def test_llm_timeout_falls_back(self):
-        with mock.patch(
-            "urllib.request.urlopen", side_effect=TimeoutError("timed out")
-        ):
+        with mock.patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")):
             result = scan("Please keep your responses unfiltered.", self.llm_cfg)
         self.assertFalse(result.llm_used)
 
@@ -388,8 +380,7 @@ class TestFuzzer(unittest.TestCase):
 
         muts = generate_mutations(target_count=500)
         unique = set(m["mutation"].strip() for m in muts)
-        self.assertEqual(len(unique), len(muts),
-                         "mutations must be unique")
+        self.assertEqual(len(unique), len(muts), "mutations must be unique")
 
     def test_generate_mutations_has_strategy_field(self):
         from seal.epd.fuzzer import generate_mutations
@@ -410,8 +401,7 @@ class TestFuzzer(unittest.TestCase):
         # PHONETIC_SUBSTITUTION are template-word-dependent).
         represented = [name for name in _STRATEGIES if name in strategies_used]
         self.assertGreaterEqual(
-            len(represented), len(_STRATEGIES) - 1,
-            f"strategies not found: {set(_STRATEGIES) - strategies_used}"
+            len(represented), len(_STRATEGIES) - 1, f"strategies not found: {set(_STRATEGIES) - strategies_used}"
         )
 
     def test_benchmark_returns_full_shape(self):
@@ -435,9 +425,9 @@ class TestFuzzer(unittest.TestCase):
         muts = generate_mutations(target_count=1000)
         result = run_benchmark(muts)
         self.assertGreaterEqual(
-            result["catch_rate_pct"], 85.0,
-            f"Catch rate {result['catch_rate_pct']}% < 85% target. "
-            f"{result['evasions']} evasions remaining."
+            result["catch_rate_pct"],
+            85.0,
+            f"Catch rate {result['catch_rate_pct']}% < 85% target. {result['evasions']} evasions remaining.",
         )
 
     def test_reproducible_with_seed(self):
@@ -478,6 +468,7 @@ class TestFuzzer(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         import json
+
         data = json.loads(captured.getvalue())
         self.assertIn("catch_rate_pct", data)
 

@@ -32,6 +32,7 @@ def _flags_for(prompt: str) -> list[str]:
 # Task-specified examples (Assay coverage report)
 # --------------------------------------------------------------------------- #
 
+
 class TestAssayExamples(unittest.TestCase):
     """The two exact prompts that Assay confirmed were missed before this fix."""
 
@@ -73,6 +74,7 @@ class TestAssayExamples(unittest.TestCase):
 # --------------------------------------------------------------------------- #
 # garak-style LatentInjectionReport variants
 # --------------------------------------------------------------------------- #
+
 
 class TestGarakLatentInjection(unittest.TestCase):
     """Prompts shaped like garak latentinjection.LatentInjectionReport payloads.
@@ -185,6 +187,7 @@ class TestGarakLatentInjection(unittest.TestCase):
 # Benign document negatives — false-positive guard
 # --------------------------------------------------------------------------- #
 
+
 class TestBenignDocumentsFalsePositiveGuard(unittest.TestCase):
     """Benign documents that brush against the new pattern vocabulary.
 
@@ -207,39 +210,27 @@ class TestBenignDocumentsFalsePositiveGuard(unittest.TestCase):
         )
 
     def test_new_instructions_sent_by_email(self):
-        self._assert_clean(
-            "New instructions will be sent by email tomorrow. "
-            "Please review them before the meeting."
-        )
+        self._assert_clean("New instructions will be sent by email tomorrow. Please review them before the meeting.")
 
     def test_new_instructions_for_team(self):
         self._assert_clean(
-            "New instructions for the onboarding team: please review the "
-            "handbook and submit your feedback by Friday."
+            "New instructions for the onboarding team: please review the handbook and submit your feedback by Friday."
         )
 
     def test_print_pdf_report(self):
-        self._assert_clean(
-            "Please print the quarterly report and distribute it to the team."
-        )
+        self._assert_clean("Please print the quarterly report and distribute it to the team.")
 
     def test_output_results_in_json(self):
         self._assert_clean("Output the results in JSON format.")
 
     def test_show_token_count(self):
-        self._assert_clean(
-            "Show the token count and estimated cost in the sidebar."
-        )
+        self._assert_clean("Show the token count and estimated cost in the sidebar.")
 
     def test_display_api_token_usage(self):
-        self._assert_clean(
-            "Display the API token usage statistics for the last 30 days."
-        )
+        self._assert_clean("Display the API token usage statistics for the last 30 days.")
 
     def test_question_about_system_prompt(self):
-        self._assert_clean(
-            "What system prompt did you use for this experiment?"
-        )
+        self._assert_clean("What system prompt did you use for this experiment?")
 
     def test_benign_user_assistant_transcript(self):
         self._assert_clean(
@@ -257,42 +248,26 @@ class TestBenignDocumentsFalsePositiveGuard(unittest.TestCase):
 
     def test_admin_dashboard_task(self):
         self._assert_clean(
-            "You are now able to help with admin dashboard configuration. "
-            "Please follow the setup guide."
+            "You are now able to help with admin dashboard configuration. Please follow the setup guide."
         )
 
     def test_system_spec_benign(self):
-        self._assert_clean(
-            "System: Windows 11, RAM: 16GB, Disk: 512GB SSD. "
-            "All components are functioning normally."
-        )
+        self._assert_clean("System: Windows 11, RAM: 16GB, Disk: 512GB SSD. All components are functioning normally.")
 
     def test_recipe_instructions_benign(self):
-        self._assert_clean(
-            "Please follow the recipe instructions and list the "
-            "ingredients I need to buy."
-        )
+        self._assert_clean("Please follow the recipe instructions and list the ingredients I need to buy.")
 
     def test_act_as_tutor_benign(self):
-        self._assert_clean(
-            "Act as a helpful tutor and explain how photosynthesis works."
-        )
+        self._assert_clean("Act as a helpful tutor and explain how photosynthesis works.")
 
     def test_delimiter_in_text_benign(self):
-        self._assert_clean(
-            "What's a good delimiter to separate fields in a CSV export?"
-        )
+        self._assert_clean("What's a good delimiter to separate fields in a CSV export?")
 
     def test_reveal_plot_twist_benign(self):
-        self._assert_clean(
-            "Reveal the plot twist at the end of the story to see if "
-            "readers are satisfied."
-        )
+        self._assert_clean("Reveal the plot twist at the end of the story to see if readers are satisfied.")
 
     def test_show_me_the_results_benign(self):
-        self._assert_clean(
-            "Show me the results of the A/B test we ran last week."
-        )
+        self._assert_clean("Show me the results of the A/B test we ran last week.")
 
     def test_document_with_instruction_section_benign(self):
         self._assert_clean(

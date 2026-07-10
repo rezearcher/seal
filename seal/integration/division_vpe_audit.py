@@ -102,6 +102,7 @@ class DivisionVPEAudit:
             self.audit_log = audit_log
         else:
             from seal.audit import AuditLog
+
             self.audit_log = AuditLog()
 
         self.conversation_id = conversation_id
@@ -147,9 +148,7 @@ class DivisionVPEAudit:
             ValueError: If ``result`` is not a recognized value.
         """
         if result not in VALID_RESULTS:
-            raise ValueError(
-                f"Invalid result '{result}'. Must be one of: {VALID_RESULTS}"
-            )
+            raise ValueError(f"Invalid result '{result}'. Must be one of: {VALID_RESULTS}")
 
         audit_id = audit_id or _generate_audit_id()
         timestamp = time.time()
@@ -174,10 +173,12 @@ class DivisionVPEAudit:
 
         # 1. Always log locally (P6.4a — durable local audit)
         try:
-            self.audit_log._append({
-                "type": "vpe_verification",
-                **record,
-            })
+            self.audit_log._append(
+                {
+                    "type": "vpe_verification",
+                    **record,
+                }
+            )
         except Exception as exc:
             logger.warning("VPE audit: local log append failed: %s", exc)
 
@@ -187,12 +188,14 @@ class DivisionVPEAudit:
         # 3. If Division write succeeded, append episode_id to local log
         if episode_id:
             try:
-                self.audit_log._append({
-                    "type": "vpe_division_ref",
-                    "audit_id": audit_id,
-                    "episode_id": episode_id,
-                    "envelope_hash": envelope_hash,
-                })
+                self.audit_log._append(
+                    {
+                        "type": "vpe_division_ref",
+                        "audit_id": audit_id,
+                        "episode_id": episode_id,
+                        "envelope_hash": envelope_hash,
+                    }
+                )
             except Exception:
                 logger.warning(
                     "VPE audit: cross-reference append failed for audit_id=%s, episode_id=%s",
@@ -234,8 +237,7 @@ class DivisionVPEAudit:
         except (TypeError, ValueError, KeyError):
             env_hash = "degraded:" + envelope.get("nonce", "unknown")[:16]
             logger.warning(
-                "DivisionVPE: envelope canonicalization failed for issuer='%s' — "
-                "using degraded hash '%s'",
+                "DivisionVPE: envelope canonicalization failed for issuer='%s' — using degraded hash '%s'",
                 envelope.get("issuer", "unknown"),
                 env_hash,
             )
@@ -284,7 +286,8 @@ class DivisionVPEAudit:
 
         # Filter to VPE verification entries
         vpe_entries = [
-            e for e in entries
+            e
+            for e in entries
             if e.get("type") in ("vpe_verification", None)  # None for legacy compat
             and "envelope_hash" in e
         ]
@@ -293,15 +296,9 @@ class DivisionVPEAudit:
         if result_filter:
             vpe_entries = [e for e in vpe_entries if e.get("result") == result_filter]
         if issuer_filter:
-            vpe_entries = [
-                e for e in vpe_entries
-                if issuer_filter.lower() in e.get("issuer", "").lower()
-            ]
+            vpe_entries = [e for e in vpe_entries if issuer_filter.lower() in e.get("issuer", "").lower()]
         if since is not None:
-            vpe_entries = [
-                e for e in vpe_entries
-                if e.get("timestamp", 0) >= since
-            ]
+            vpe_entries = [e for e in vpe_entries if e.get("timestamp", 0) >= since]
 
         # Newest first
         vpe_entries.sort(key=lambda e: e.get("timestamp", 0), reverse=True)
@@ -326,9 +323,7 @@ class DivisionVPEAudit:
             List of matching episode contents (parsed dicts).
         """
         if search_func is None:
-            logger.warning(
-                "VPE audit: no Division search function available for querying"
-            )
+            logger.warning("VPE audit: no Division search function available for querying")
             return []
 
         try:
@@ -428,10 +423,7 @@ class DivisionVPEAudit:
                 return None
 
         # No remember function available — log and skip
-        logger.debug(
-            "VPE audit: no Division remember function injected, "
-            "falling back to local log only"
-        )
+        logger.debug("VPE audit: no Division remember function injected, falling back to local log only")
         return None
 
     def _extract_episode_id(self, result: Any) -> None:
@@ -461,6 +453,3 @@ class DivisionVPEAudit:
 def _generate_audit_id() -> str:
     """Generate a unique audit ID (UUID4 hex, 32 chars)."""
     return uuid.uuid4().hex
-
-
-

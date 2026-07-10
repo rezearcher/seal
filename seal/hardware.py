@@ -163,7 +163,9 @@ class YubiKeyPIVProvider(HsmProvider):
         try:
             result = subprocess.run(
                 ["ykman", "piv", "info"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             return result.returncode == 0
         except (subprocess.SubprocessError, FileNotFoundError):
@@ -183,11 +185,18 @@ class YubiKeyPIVProvider(HsmProvider):
 
             subprocess.run(
                 [
-                    "ykman", "piv", "keys", "generate",
-                    "--algorithm", "ECCP256",
-                    _YUBIKEY_PIV_SLOT, pubkey_pem,
+                    "ykman",
+                    "piv",
+                    "keys",
+                    "generate",
+                    "--algorithm",
+                    "ECCP256",
+                    _YUBIKEY_PIV_SLOT,
+                    pubkey_pem,
                 ],
-                check=True, capture_output=True, timeout=30,
+                check=True,
+                capture_output=True,
+                timeout=30,
             )
 
             # Read the public key
@@ -220,11 +229,18 @@ class YubiKeyPIVProvider(HsmProvider):
 
             subprocess.run(
                 [
-                    "ykman", "piv", "sign",
-                    "--algorithm", "ECDSA",
-                    _YUBIKEY_PIV_SLOT, hash_file, sig_file,
+                    "ykman",
+                    "piv",
+                    "sign",
+                    "--algorithm",
+                    "ECDSA",
+                    _YUBIKEY_PIV_SLOT,
+                    hash_file,
+                    sig_file,
                 ],
-                check=True, capture_output=True, timeout=30,
+                check=True,
+                capture_output=True,
+                timeout=30,
             )
 
             return Path(sig_file).read_bytes()
@@ -268,7 +284,9 @@ class TPMProvider(HsmProvider):
         try:
             result = subprocess.run(
                 ["tpm2_getcap", "properties-fixed"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             return result.returncode == 0
         except (subprocess.SubprocessError, FileNotFoundError):
@@ -292,30 +310,44 @@ class TPMProvider(HsmProvider):
             # Create primary key in storage hierarchy
             subprocess.run(
                 ["tpm2_createprimary", "-c", primary_ctx, "-Q"],
-                check=True, capture_output=True, timeout=30,
+                check=True,
+                capture_output=True,
+                timeout=30,
             )
 
             # Create ECC P-256 key
             subprocess.run(
                 [
-                    "tpm2_create", "-C", primary_ctx,
-                    "-G", "ecc256:ecdsa",
-                    "-u", key_pub, "-r", key_priv, "-Q",
+                    "tpm2_create",
+                    "-C",
+                    primary_ctx,
+                    "-G",
+                    "ecc256:ecdsa",
+                    "-u",
+                    key_pub,
+                    "-r",
+                    key_priv,
+                    "-Q",
                 ],
-                check=True, capture_output=True, timeout=30,
+                check=True,
+                capture_output=True,
+                timeout=30,
             )
 
             # Load into context
             subprocess.run(
-                ["tpm2_load", "-C", primary_ctx, "-u", key_pub, "-r", key_priv,
-                 "-c", key_ctx, "-Q"],
-                check=True, capture_output=True, timeout=30,
+                ["tpm2_load", "-C", primary_ctx, "-u", key_pub, "-r", key_priv, "-c", key_ctx, "-Q"],
+                check=True,
+                capture_output=True,
+                timeout=30,
             )
 
             # Read public key
             subprocess.run(
                 ["tpm2_readpublic", "-c", key_ctx, "-o", pubkey_pem, "-Q"],
-                check=True, capture_output=True, timeout=30,
+                check=True,
+                capture_output=True,
+                timeout=30,
             )
             public_key = _load_ec_pubkey_from_pem(pubkey_pem)
 
@@ -325,7 +357,9 @@ class TPMProvider(HsmProvider):
             persist_ctx = persist_dir / f"{key_id}.ctx"
             subprocess.run(
                 ["tpm2_evictcontrol", "-c", key_ctx, "-o", str(persist_ctx), "-Q"],
-                check=True, capture_output=True, timeout=30,
+                check=True,
+                capture_output=True,
+                timeout=30,
             )
 
         key = HsmKey(
@@ -358,13 +392,20 @@ class TPMProvider(HsmProvider):
 
             subprocess.run(
                 [
-                    "tpm2_sign", "-c", str(key_ctx),
-                    "-g", "sha256",
-                    "-o", sig_file,
-                    "-f", "plain",
+                    "tpm2_sign",
+                    "-c",
+                    str(key_ctx),
+                    "-g",
+                    "sha256",
+                    "-o",
+                    sig_file,
+                    "-f",
+                    "plain",
                     msg_file,
                 ],
-                check=True, capture_output=True, timeout=30,
+                check=True,
+                capture_output=True,
+                timeout=30,
             )
 
             return Path(sig_file).read_bytes()
@@ -429,7 +470,9 @@ class SecureEnclaveProvider(HsmProvider):
         try:
             result = subprocess.run(
                 [security_path, "list-keychains"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             return result.returncode == 0
         except (subprocess.SubprocessError, FileNotFoundError):
@@ -452,12 +495,17 @@ class SecureEnclaveProvider(HsmProvider):
 
         subprocess.run(
             [
-                "security", "create-keypair",
-                "-k", priv_pem,
-                "-p", pub_pem,
+                "security",
+                "create-keypair",
+                "-k",
+                priv_pem,
+                "-p",
+                pub_pem,
                 "-s",  # Secure Enclave
             ],
-            check=True, capture_output=True, timeout=30,
+            check=True,
+            capture_output=True,
+            timeout=30,
         )
 
         public_key = _load_ec_pubkey_from_pem(pub_pem)
@@ -500,12 +548,17 @@ class SecureEnclaveProvider(HsmProvider):
 
             subprocess.run(
                 [
-                    "security", "sign",
-                    "-k", priv_pem,  # PEM with keychain persistent reference
-                    "-o", sig_file,
+                    "security",
+                    "sign",
+                    "-k",
+                    priv_pem,  # PEM with keychain persistent reference
+                    "-o",
+                    sig_file,
                     data_file,
                 ],
-                check=True, capture_output=True, timeout=30,
+                check=True,
+                capture_output=True,
+                timeout=30,
             )
 
             return Path(sig_file).read_bytes()
@@ -597,6 +650,7 @@ def _load_ec_pubkey_from_pem(pem_path: str) -> bytes:
     with open(pem_path, "rb") as f:
         pem_data = f.read()
     from cryptography.hazmat.primitives.asymmetric import ec as ecc
+
     try:
         key = serialization.load_pem_public_key(pem_data)
     except Exception:
@@ -714,10 +768,12 @@ class HsmManager:
         results: list[dict] = []
         self.discover()
         for name, provider in self._providers.items():
-            results.append({
-                "name": name,
-                "algorithm": provider.sig_algorithm,
-                "platforms": provider.supported_platforms,
-                "active": name != "software-sim",
-            })
+            results.append(
+                {
+                    "name": name,
+                    "algorithm": provider.sig_algorithm,
+                    "platforms": provider.supported_platforms,
+                    "active": name != "software-sim",
+                }
+            )
         return results

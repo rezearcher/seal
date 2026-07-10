@@ -109,9 +109,7 @@ class NonceStore:
 
     def contains(self, nonce: str) -> bool:
         """Check if a nonce has already been recorded."""
-        cursor = self._conn().execute(
-            "SELECT 1 FROM nonces WHERE nonce = ?", (nonce,)
-        )
+        cursor = self._conn().execute("SELECT 1 FROM nonces WHERE nonce = ?", (nonce,))
         return cursor.fetchone() is not None
 
     def remove(self, nonce: str) -> bool:
@@ -119,9 +117,7 @@ class NonceStore:
 
         Returns True if a row was deleted, False if not found.
         """
-        cursor = self._conn().execute(
-            "DELETE FROM nonces WHERE nonce = ?", (nonce,)
-        )
+        cursor = self._conn().execute("DELETE FROM nonces WHERE nonce = ?", (nonce,))
         self._conn().commit()
         return cursor.rowcount > 0
 

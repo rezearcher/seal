@@ -45,8 +45,7 @@ def _run_vector_test(vector: dict, fixture: dict):
 
     expected = vector["expected_verify"]
     assert result["valid"] == expected, (
-        f"[{vector['id']}] expected valid={expected}, "
-        f"got valid={result['valid']} reason={result['reason']}"
+        f"[{vector['id']}] expected valid={expected}, got valid={result['valid']} reason={result['reason']}"
     )
     assert result["reason"] == ("ok" if expected else result["reason"])
 
@@ -65,6 +64,7 @@ def test_all_vectors():
 def _make_vector_test(vec: dict, fixture: dict):
     def test_fn():
         _run_vector_test(vec, fixture)
+
     test_fn.__name__ = f"test_vector_{vec['id']}"
     test_fn.__doc__ = vec["description"]
     return test_fn

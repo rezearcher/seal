@@ -35,6 +35,7 @@ from seal.core import (
 # Fixtures
 # =========================================================================
 
+
 @pytest.fixture
 def alice_keys():
     """Honest actor's key pair."""
@@ -94,6 +95,7 @@ def valid_hmac_envelope(hmac_secret):
 # =========================================================================
 # 1. SIGNATURE REPLAY ATTACKS
 # =========================================================================
+
 
 class TestSignatureReplay:
     """Reuse a valid signature from one envelope with different content."""
@@ -192,6 +194,7 @@ class TestSignatureReplay:
 # 2. KEY CONFUSION ATTACKS
 # =========================================================================
 
+
 class TestKeyConfusion:
     """Attempts to confuse the key verification path."""
 
@@ -273,6 +276,7 @@ class TestKeyConfusion:
 # 3. JSON MALLEABILITY / FIELD REORDERING
 # =========================================================================
 
+
 class TestJsonMalleability:
     """Modify the JSON envelope structure without regenerating the signature."""
 
@@ -288,8 +292,7 @@ class TestJsonMalleability:
         tampered = json.dumps(env, separators=(",", ":"))
         result = vpe_verify(tampered, public_key=alice_keys["public_key"])
         assert result["valid"] is True, (
-            "extra fields are not in signed payload — by design. "
-            "Downstream MUST ignore non-canonical fields."
+            "extra fields are not in signed payload — by design. Downstream MUST ignore non-canonical fields."
         )
 
     def test_multiple_extra_fields_passes(self, alice_keys, valid_dict):
@@ -308,8 +311,7 @@ class TestJsonMalleability:
         tampered = json.dumps(env, separators=(",", ":"))
         result = vpe_verify(tampered, public_key=alice_keys["public_key"])
         assert result["valid"] is False, (
-            "adding keys to scope changes canonical JSON (sorted keys), "
-            "so signature mismatch catches it"
+            "adding keys to scope changes canonical JSON (sorted keys), so signature mismatch catches it"
         )
 
     def test_scope_key_reordering_caught(self, alice_keys, valid_dict):
@@ -345,9 +347,7 @@ class TestJsonMalleability:
             1,
         )
         result = vpe_verify(dup_raw, public_key=alice_keys["public_key"])
-        assert result["valid"] is True, (
-            "duplicate key before original — last value unchanged → sig valid"
-        )
+        assert result["valid"] is True, "duplicate key before original — last value unchanged → sig valid"
 
     def test_duplicate_key_with_different_last_value(self, alice_keys, valid_dict):
         """Prepending a duplicate before the original keeps the original as
@@ -359,9 +359,7 @@ class TestJsonMalleability:
             1,
         )
         result = vpe_verify(dup_raw, public_key=alice_keys["public_key"])
-        assert result["valid"] is True, (
-            "last-wins means original value used when dup prepended before it"
-        )
+        assert result["valid"] is True, "last-wins means original value used when dup prepended before it"
 
     def test_duplicate_key_after_original_value(self, alice_keys, valid_dict):
         """If attacker appends a duplicate key AFTER the original,
@@ -383,9 +381,7 @@ class TestJsonMalleability:
         raw_dup = "{" + ",".join(ordered_pairs) + "}"
         result = vpe_verify(raw_dup, public_key=alice_keys["public_key"])
         # json.loads takes "MALICIOUS_replaced" (last wins) → different canon
-        assert result["valid"] is False, (
-            "duplicate key with different last value changes canonical form"
-        )
+        assert result["valid"] is False, "duplicate key with different last value changes canonical form"
 
     # --- Field reordering ---
 
@@ -404,6 +400,7 @@ class TestJsonMalleability:
     def test_field_order_randomized(self, alice_keys, valid_dict):
         """Multiple randomized field orderings — all must verify."""
         import random
+
         keys = list(valid_dict.keys())
         for seed in range(10):
             random.seed(seed)
@@ -449,9 +446,7 @@ class TestJsonMalleability:
         del env_dict["doc_sha256"]
         tampered = json.dumps(env_dict, separators=(",", ":"))
         result = vpe_verify(tampered, public_key=alice_keys["public_key"])
-        assert result["valid"] is True, (
-            "missing doc_sha256 with get() default '' produces same canon"
-        )
+        assert result["valid"] is True, "missing doc_sha256 with get() default '' produces same canon"
 
     def test_counter_removed_when_none(self, alice_keys):
         """When counter was None and attacker removes it entirely,
@@ -463,9 +458,7 @@ class TestJsonMalleability:
         del env_dict["counter"]
         tampered = json.dumps(env_dict, separators=(",", ":"))
         result = vpe_verify(tampered, public_key=alice_keys["public_key"])
-        assert result["valid"] is True, (
-            "removing counter when it was None is same as canonical default"
-        )
+        assert result["valid"] is True, "removing counter when it was None is same as canonical default"
 
     def test_type_coercion_string_to_number(self, alice_keys, valid_dict):
         """Type coercion: ttl_seconds from int to string changes bytes."""
@@ -495,6 +488,7 @@ class TestJsonMalleability:
 # =========================================================================
 # 4. ALGORITHM CONFUSION
 # =========================================================================
+
 
 class TestAlgorithmConfusion:
     """Attempt to force the verifier down a different crypto path."""
@@ -541,8 +535,7 @@ class TestAlgorithmConfusion:
         tampered = json.dumps(env, separators=(",", ":"))
         result = vpe_verify(tampered, public_key=alice_keys["public_key"])
         assert result["valid"] is True, (
-            "'alg' field is extra (not signed) and ignored — "
-            "VPE doesn't use algorithm negotiation"
+            "'alg' field is extra (not signed) and ignored — VPE doesn't use algorithm negotiation"
         )
 
     def test_hs256_hmac_with_public_key(self, alice_keys, valid_dict):
@@ -550,6 +543,7 @@ class TestAlgorithmConfusion:
         Ed25519 public key as the HMAC secret. Must fail because VPE only
         uses Ed25519 verification."""
         import hmac
+
         env = dict(valid_dict)
         canon = _canonical_json(env)
         hmac_sig = hmac.new(alice_keys["public_key"], canon, "sha256").hexdigest()
@@ -589,23 +583,20 @@ class TestAlgorithmConfusion:
         The HMAC verifier recomputes HMAC over canonical JSON, which won't
         match the Ed25519 signature."""
         result = vpe_verify_hmac(valid_envelope, shared_secret=hmac_secret)
-        assert result["valid"] is False, (
-            "Ed25519 envelope verified with HMAC path must fail"
-        )
+        assert result["valid"] is False, "Ed25519 envelope verified with HMAC path must fail"
 
     def test_hmac_envelope_with_ed25519_verifier(self, alice_keys, hmac_secret, valid_hmac_envelope):
         """Algorithm confusion: pass HMAC-signed envelope to Ed25519 verifier.
         Ed25519 verify will try to verify the HMAC sig (64 hex chars = 32 bytes)
         as an Ed25519 signature (expects 64 bytes) which should fail."""
         result = vpe_verify(valid_hmac_envelope, public_key=alice_keys["public_key"])
-        assert result["valid"] is False, (
-            "HMAC envelope verified with Ed25519 path must fail"
-        )
+        assert result["valid"] is False, "HMAC envelope verified with Ed25519 path must fail"
 
 
 # =========================================================================
 # 5. COMBINED / COMPLEX ATTACKS
 # =========================================================================
+
 
 class TestComplexAttacks:
     """Multi-vector attacks combining techniques."""
@@ -630,9 +621,7 @@ class TestComplexAttacks:
         env["__proto__"] = {"command": "rm -rf /"}
         tampered = json.dumps(env, separators=(",", ":"))
         result = vpe_verify(tampered, public_key=alice_keys["public_key"])
-        assert result["valid"] is True, (
-            "extra fields bypass — downstream MUST ignore non-canonical fields"
-        )
+        assert result["valid"] is True, "extra fields bypass — downstream MUST ignore non-canonical fields"
 
     def test_replay_scope_change_via_extra_field_only(self, alice_keys, valid_dict):
         """If an attacker adds 'effective_scope' that overrides the real
@@ -643,8 +632,7 @@ class TestComplexAttacks:
         tampered = json.dumps(env, separators=(",", ":"))
         result = vpe_verify(tampered, public_key=alice_keys["public_key"])
         assert result["valid"] is True, (
-            "extra effective_scope bypass — VPE must ensure downstream "
-            "never reads non-canonical fields"
+            "extra effective_scope bypass — VPE must ensure downstream never reads non-canonical fields"
         )
 
     def test_unicode_normalization_attack(self, alice_keys):
@@ -678,6 +666,7 @@ class TestComplexAttacks:
         """HMAC signature (hex) replayed as Ed25519 signature in an
         Ed25519 envelope — should fail on sig length mismatch or verify."""
         import hmac
+
         env = dict(valid_dict)
         # Compute fresh HMAC for THIS envelope's content
         canon = _canonical_json(env)

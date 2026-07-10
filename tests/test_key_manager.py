@@ -289,38 +289,38 @@ class TestRotateIfExpiring:
 class TestRevokeKey:
     def test_revoke_key_changes_status(self, km):
         k = km.generate_key()
-        result = km.revoke_key(k['kid'], reason='key compromised')
-        assert result['ok'] is True
-        assert result['rotated'] is True
-        assert result['new_kid'] is not None
-        updated = km.get_key(k['kid'])
-        assert updated['status'] == STATUS_REVOKED
-        assert updated['revoked_at'] is not None
-        assert updated['revoke_reason'] == 'key compromised'
+        result = km.revoke_key(k["kid"], reason="key compromised")
+        assert result["ok"] is True
+        assert result["rotated"] is True
+        assert result["new_kid"] is not None
+        updated = km.get_key(k["kid"])
+        assert updated["status"] == STATUS_REVOKED
+        assert updated["revoked_at"] is not None
+        assert updated["revoke_reason"] == "key compromised"
 
     def test_revoke_nonexistent_key_returns_false(self, km):
-        result = km.revoke_key('k_does_not_exist')
-        assert result['ok'] is False
-        assert result['rotated'] is False
-        assert result['new_kid'] is None
+        result = km.revoke_key("k_does_not_exist")
+        assert result["ok"] is False
+        assert result["rotated"] is False
+        assert result["new_kid"] is None
 
     def test_revoked_key_not_active(self, km):
         k = km.generate_key()
-        result = km.revoke_key(k['kid'])
-        assert result['ok'] is True
+        result = km.revoke_key(k["kid"])
+        assert result["ok"] is True
         new_active = km.get_active_key()
         assert new_active is not None
-        assert new_active['kid'] != k['kid']
-        assert new_active['kid'] == result['new_kid']
+        assert new_active["kid"] != k["kid"]
+        assert new_active["kid"] == result["new_kid"]
 
     def test_revoke_of_retired_key(self, km):
         k1 = km.generate_key()
         km.generate_key()  # retires k1
-        result = km.revoke_key(k1['kid'])
-        assert result['ok'] is True
-        assert result['rotated'] is False
-        assert result['new_kid'] is None
-        assert km.get_key(k1['kid'])['status'] == STATUS_REVOKED
+        result = km.revoke_key(k1["kid"])
+        assert result["ok"] is True
+        assert result["rotated"] is False
+        assert result["new_kid"] is None
+        assert km.get_key(k1["kid"])["status"] == STATUS_REVOKED
 
 
 # ---------------------------------------------------------------------------
@@ -331,17 +331,17 @@ class TestRevokeKey:
 class TestEdgeCases:
     def test_full_lifecycle(self, km):
         k1 = km.generate_key()
-        assert k1['status'] == STATUS_ACTIVE
+        assert k1["status"] == STATUS_ACTIVE
         k2 = km.rotate_key()
-        assert k2['status'] == STATUS_ACTIVE
-        assert km.get_key(k1['kid'])['status'] == STATUS_RETIRED
-        result = km.revoke_key(k1['kid'], reason='old key retired')
-        assert result['ok'] is True
-        assert result['rotated'] is False
-        assert km.get_key(k1['kid'])['status'] == STATUS_REVOKED
+        assert k2["status"] == STATUS_ACTIVE
+        assert km.get_key(k1["kid"])["status"] == STATUS_RETIRED
+        result = km.revoke_key(k1["kid"], reason="old key retired")
+        assert result["ok"] is True
+        assert result["rotated"] is False
+        assert km.get_key(k1["kid"])["status"] == STATUS_REVOKED
         vkeys = km.get_verification_keys()
-        assert k1['kid'] not in {k['kid'] for k in vkeys}
-        assert k2['kid'] in {k['kid'] for k in vkeys}
+        assert k1["kid"] not in {k["kid"] for k in vkeys}
+        assert k2["kid"] in {k["kid"] for k in vkeys}
 
     def test_multiple_rotations(self, km):
         """10 rotations, verify graceful verification includes all."""
@@ -388,10 +388,9 @@ class TestEncryptionAtRest:
         """Raw SQLite blob must be Fernet ciphertext, not 32 raw bytes."""
         key = km.generate_key()
         import sqlite3
+
         conn = sqlite3.connect(km.db_path)
-        row = conn.execute(
-            "SELECT private_key FROM keys WHERE kid=?", (key["kid"],)
-        ).fetchone()
+        row = conn.execute("SELECT private_key FROM keys WHERE kid=?", (key["kid"],)).fetchone()
         conn.close()
         raw = row[0]
         assert raw.startswith(b"gAAAA"), f"Expected Fernet prefix, got {raw[:10]!r}"
@@ -406,6 +405,7 @@ class TestEncryptionAtRest:
 
     def test_persistence_with_master_key(self, tmp_path):
         from cryptography.fernet import Fernet
+
         mk = Fernet.generate_key()
         db = tmp_path / "enc_persist.db"
         mgr1 = KeyManager(db_path=str(db), master_key=mk)
@@ -418,6 +418,7 @@ class TestEncryptionAtRest:
 
     def test_wrong_master_key_fails_gracefully(self, tmp_path):
         from cryptography.fernet import Fernet
+
         mk1 = Fernet.generate_key()
         mk2 = Fernet.generate_key()
         db = tmp_path / "wrong_key.db"
@@ -430,6 +431,7 @@ class TestEncryptionAtRest:
 
     def test_nonexistent_master_key_created_automatically(self, tmp_path):
         from seal import key_manager as km_mod
+
         orig_dir = km_mod.SEAL_DIR
         orig_path = km_mod.DEFAULT_MASTER_KEY_PATH
         try:
@@ -450,6 +452,7 @@ class TestEncryptionAtRest:
     def test_master_key_file_permissions(self, tmp_path):
         mk_path = tmp_path / "master.key"
         from seal.key_manager import _load_or_create_master_key
+
         key = _load_or_create_master_key(mk_path)
         assert mk_path.exists()
         mode = os.stat(mk_path).st_mode & 0o777
@@ -458,6 +461,7 @@ class TestEncryptionAtRest:
 
     def test_custom_master_key_bytes(self, tmp_path):
         from cryptography.fernet import Fernet
+
         mk = Fernet.generate_key()
         db = tmp_path / "custom_bytes.db"
         mgr = KeyManager(db_path=str(db), master_key=mk)
@@ -467,6 +471,7 @@ class TestEncryptionAtRest:
 
     def test_master_key_from_file_path(self, tmp_path):
         from cryptography.fernet import Fernet
+
         mk = Fernet.generate_key()
         mk_path = tmp_path / "custom_master.key"
         mk_path.write_bytes(mk)
@@ -505,6 +510,7 @@ class TestMachineIdXor:
 
     def test_xor_with_machine_id(self, tmp_path):
         from cryptography.fernet import Fernet
+
         mk = Fernet.generate_key()
         db = tmp_path / "xor.db"
         mgr = KeyManager(db_path=str(db), master_key=mk, use_machine_id=True)
@@ -514,6 +520,7 @@ class TestMachineIdXor:
 
     def test_xor_persistence(self, tmp_path):
         from cryptography.fernet import Fernet
+
         mk = Fernet.generate_key()
         db = tmp_path / "xor_persist.db"
         mgr1 = KeyManager(db_path=str(db), master_key=mk, use_machine_id=True)
@@ -530,6 +537,7 @@ class TestLegacyMigration:
         import sqlite3
 
         from cryptography.fernet import Fernet
+
         mk = Fernet.generate_key()
         db = tmp_path / "legacy.db"
         conn = sqlite3.connect(str(db))
@@ -566,9 +574,7 @@ class TestLegacyMigration:
 
         # Verify the blob in the DB is now Fernet-encrypted.
         conn2 = sqlite3.connect(str(db))
-        stored = conn2.execute(
-            "SELECT private_key FROM keys WHERE kid=?", ("k_legacy",)
-        ).fetchone()[0]
+        stored = conn2.execute("SELECT private_key FROM keys WHERE kid=?", ("k_legacy",)).fetchone()[0]
         conn2.close()
         assert len(stored) > 64, f"Expected Fernet token, got {len(stored)} bytes"
         assert stored.startswith(b"gAAAA"), f"Expected Fernet prefix, got {stored[:10]!r}"
@@ -578,6 +584,7 @@ class TestLegacyMigration:
         import sqlite3
 
         from cryptography.fernet import Fernet
+
         mk = Fernet.generate_key()
         db = tmp_path / "legacy_nowarn.db"
         conn = sqlite3.connect(str(db))

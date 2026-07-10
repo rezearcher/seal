@@ -42,13 +42,13 @@ _ENVELOPE_FIELDS = [
 # for missing keys), so stripping is purely a transport-size optimisation.
 _STRIPPABLE_FIELD_DEFAULTS: dict = {
     "vpe_version": VPE_VERSION,  # "1.0" — canonical default matches
-    "scope": {},                 # empty scope = no restrictions
-    "issuer": "",                # empty issuer
-    "audience": "",              # empty audience
-    "doc_sha256": "",            # empty doc hash
-    "iat": None,                 # no iat — backward-compat envelope
-    "counter": None,             # no counter — canonical default is null
-    "cert_chain": None,          # no cert chain
+    "scope": {},  # empty scope = no restrictions
+    "issuer": "",  # empty issuer
+    "audience": "",  # empty audience
+    "doc_sha256": "",  # empty doc hash
+    "iat": None,  # no iat — backward-compat envelope
+    "counter": None,  # no counter — canonical default is null
+    "cert_chain": None,  # no cert chain
 }
 
 # ttl_seconds is special: strip when at default (300) or 0 (no expiry)
@@ -79,10 +79,12 @@ def _strip_empty_fields(envelope: dict) -> dict:
 
     return result
 
+
 # ---------------------------------------------------------------------------
 # Key management
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
+
 
 def generate_key_pair() -> dict:
     """Generate a new Ed25519 key pair.
@@ -115,12 +117,12 @@ def _load_public_key(raw: bytes) -> Ed25519PublicKey:
 # so stripped envelopes (missing keys) still produce identical canonical bytes.
 _CANONICAL_DEFAULTS: dict = {
     "vpe_version": VPE_VERSION,  # "1.0"
-    "scope": {},                 # empty dict
+    "scope": {},  # empty dict
     "issuer": "",
     "audience": "",
     "doc_sha256": "",
     "iat": None,
-    "ttl_seconds": 300,          # default TTL
+    "ttl_seconds": 300,  # default TTL
     "nonce": "",
     "counter": None,
     "cert_chain": None,
@@ -158,6 +160,7 @@ def _canonical_json(envelope: dict) -> bytes:
 # ---------------------------------------------------------------------------
 # Sign
 # ---------------------------------------------------------------------------
+
 
 def _make_nonce() -> str:
     return secrets.token_hex(16)
@@ -227,6 +230,7 @@ def vpe_sign(
 # ---------------------------------------------------------------------------
 # Verify
 # ---------------------------------------------------------------------------
+
 
 def vpe_verify(
     envelope_str: str,
@@ -332,14 +336,12 @@ def vpe_verify(
     if trust_anchor is not None and cert_chain is not None:
         chain_result = verify_cert_chain(cert_chain, trust_anchor=trust_anchor)
         if not chain_result["valid"]:
-            return {"valid": False,
-                    "reason": f"cert_chain_failed: {chain_result['reason']}"}
+            return {"valid": False, "reason": f"cert_chain_failed: {chain_result['reason']}"}
         effective_pk_bytes = chain_result["leaf_public_key"]
     elif public_key is not None:
         effective_pk_bytes = public_key
     else:
-        return {"valid": False,
-                "reason": "no_verification_key: provide public_key or trust_anchor"}
+        return {"valid": False, "reason": "no_verification_key: provide public_key or trust_anchor"}
 
     # 10. Cryptographic signature verification
     verify_envelope = dict(envelope)
@@ -745,14 +747,12 @@ def verify_cert_chain(chain: list, *, trust_anchor: bytes) -> dict:
         return {"valid": False, "reason": "invalid_root_public_key_hex", "leaf_public_key": None}
 
     if root_subject_pk != trust_anchor:
-        return {"valid": False, "reason": "root_public_key_mismatch_trust_anchor",
-                "leaf_public_key": None}
+        return {"valid": False, "reason": "root_public_key_mismatch_trust_anchor", "leaf_public_key": None}
 
     # Verify root self-signature using our trust anchor
     result = verify_certificate(root, parent_public_key=trust_anchor)
     if not result["valid"]:
-        return {"valid": False, "reason": f"root_cert_failed: {result['reason']}",
-                "leaf_public_key": None}
+        return {"valid": False, "reason": f"root_cert_failed: {result['reason']}", "leaf_public_key": None}
 
     # --- Walk intermediate chain ---
     parent_public_key = trust_anchor
@@ -761,17 +761,13 @@ def verify_cert_chain(chain: list, *, trust_anchor: bytes) -> dict:
         cert = chain[i]
         result = verify_certificate(cert, parent_public_key=parent_public_key)
         if not result["valid"]:
-            return {"valid": False,
-                    "reason": f"chain_link_{i}_failed: {result['reason']}",
-                    "leaf_public_key": None}
+            return {"valid": False, "reason": f"chain_link_{i}_failed: {result['reason']}", "leaf_public_key": None}
 
         # The subject of this cert becomes the parent for the next link
         try:
             parent_public_key = bytes.fromhex(cert.get("subject_public_key", ""))
         except ValueError:
-            return {"valid": False,
-                    "reason": f"chain_link_{i}_invalid_public_key_hex",
-                    "leaf_public_key": None}
+            return {"valid": False, "reason": f"chain_link_{i}_invalid_public_key_hex", "leaf_public_key": None}
 
     # Last cert's subject_public_key is the leaf key
     return {"valid": True, "reason": "ok", "leaf_public_key": parent_public_key}
@@ -992,24 +988,18 @@ def vpe_verify_multi(
 
     for i, entry in enumerate(signatures):
         if not isinstance(entry, dict):
-            details["invalid_signatures"].append(
-                {"index": i, "reason": "entry_not_dict"}
-            )
+            details["invalid_signatures"].append({"index": i, "reason": "entry_not_dict"})
             continue
 
         key_id = entry.get("key_id", "")
         sig = entry.get("sig", "")
 
         if not isinstance(key_id, str) or not key_id:
-            details["invalid_signatures"].append(
-                {"index": i, "reason": "missing_or_empty_key_id"}
-            )
+            details["invalid_signatures"].append({"index": i, "reason": "missing_or_empty_key_id"})
             continue
 
         if not isinstance(sig, str) or not sig:
-            details["invalid_signatures"].append(
-                {"index": i, "key_id": key_id, "reason": "missing_or_empty_sig"}
-            )
+            details["invalid_signatures"].append({"index": i, "key_id": key_id, "reason": "missing_or_empty_sig"})
             continue
 
         # Check for duplicate key_id
@@ -1027,9 +1017,7 @@ def vpe_verify_multi(
         try:
             sig_bytes = bytes.fromhex(sig)
         except ValueError:
-            details["invalid_signatures"].append(
-                {"index": i, "key_id": key_id, "reason": "invalid_sig_encoding"}
-            )
+            details["invalid_signatures"].append({"index": i, "key_id": key_id, "reason": "invalid_sig_encoding"})
             continue
 
         try:
@@ -1039,9 +1027,7 @@ def vpe_verify_multi(
             valid_count += 1
             details["valid_signatures"].append(key_id)
         except InvalidSignature:
-            details["invalid_signatures"].append(
-                {"index": i, "key_id": key_id, "reason": "signature_mismatch"}
-            )
+            details["invalid_signatures"].append({"index": i, "key_id": key_id, "reason": "signature_mismatch"})
 
     # 8. Check threshold
     now = int(time.time())
@@ -1060,17 +1046,13 @@ def vpe_verify_multi(
     else:
         reasons = []
         if valid_count < threshold:
-            reasons.append(
-                f"insufficient_valid_signatures: {valid_count} < {threshold}"
-            )
+            reasons.append(f"insufficient_valid_signatures: {valid_count} < {threshold}")
         if details["duplicate_key_ids"]:
             reasons.append(f"duplicate_key_ids: {details['duplicate_key_ids']}")
         if details["unknown_key_ids"]:
             reasons.append(f"unknown_key_ids: {details['unknown_key_ids']}")
         if details["invalid_signatures"]:
-            reasons.append(
-                f"invalid_signatures: {len(details['invalid_signatures'])} failed"
-            )
+            reasons.append(f"invalid_signatures: {len(details['invalid_signatures'])} failed")
         return {
             "valid": False,
             "reason": "; ".join(reasons),
@@ -1140,8 +1122,7 @@ def vpe_sign_hardware(
         provider = mgr.get_provider(provider_name)
         if provider is None:
             raise ValueError(
-                f"hardware provider {provider_name!r} not available. "
-                f"Available: {[p.name for p in mgr.discover()]}"
+                f"hardware provider {provider_name!r} not available. Available: {[p.name for p in mgr.discover()]}"
             )
     else:
         provider = mgr.default_provider
@@ -1247,6 +1228,7 @@ def vpe_verify_hardware(
 # ---------------------------------------------------------------------------
 # Convenience helpers
 # ---------------------------------------------------------------------------
+
 
 def envelope_to_json(envelope: dict) -> str:
     """Serialize a VPE envelope dict to JSON."""

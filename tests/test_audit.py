@@ -215,18 +215,8 @@ def test_time_based_rotation(tmp_path):
     old_ts = (datetime.now(UTC) - timedelta(days=40)).isoformat()
     recent_ts = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     with open(path, "w", encoding="utf-8") as fh:
-        fh.write(
-            json.dumps(
-                {"timestamp": old_ts, "type": "vpe_verification", "result": "valid"}
-            )
-            + "\n"
-        )
-        fh.write(
-            json.dumps(
-                {"timestamp": recent_ts, "type": "vpe_verification", "result": "valid"}
-            )
-            + "\n"
-        )
+        fh.write(json.dumps({"timestamp": old_ts, "type": "vpe_verification", "result": "valid"}) + "\n")
+        fh.write(json.dumps({"timestamp": recent_ts, "type": "vpe_verification", "result": "valid"}) + "\n")
     # Appending triggers _rotate_locked, which prunes the 40-day-old entry.
     log.log_vpe_verification("sha256:fresh", "user:rez", "agent:h", "valid")
 

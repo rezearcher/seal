@@ -1,4 +1,5 @@
 """Pytest fixtures for e2e VPE middleware tests (P6.2)."""
+
 import os
 import sys
 import tempfile
@@ -21,12 +22,14 @@ def key_dir():
 
 @pytest.fixture
 def middleware(key_dir):
-    mw = VPEMiddleware(config={
-        "vpe_enabled": True,
-        "vpe_mode": "enforce",
-        "vpe_key_dir": key_dir,
-        "vpe_skip_tools": ["todo", "memory", "clarify", "session_search"],
-        "vpe_epd_enabled": False,
-    })
+    mw = VPEMiddleware(
+        config={
+            "vpe_enabled": True,
+            "vpe_mode": "enforce",
+            "vpe_key_dir": key_dir,
+            "vpe_skip_tools": ["todo", "memory", "clarify", "session_search"],
+            "vpe_epd_enabled": False,
+        }
+    )
     mw.ensure_keys()
     return mw

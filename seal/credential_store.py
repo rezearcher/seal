@@ -77,9 +77,7 @@ def _load_or_create_keyfile(keyfile: Path) -> bytes:
 def validate_label(label: str) -> str:
     """Validate a credential label, returning it unchanged if valid."""
     if not isinstance(label, str) or not LABEL_RE.match(label):
-        raise CredentialStoreError(
-            f"invalid label {label!r}: must match {LABEL_RE.pattern}"
-        )
+        raise CredentialStoreError(f"invalid label {label!r}: must match {LABEL_RE.pattern}")
     return label
 
 
@@ -146,9 +144,7 @@ class CredentialStore:
                 self.path,
                 exc,
             )
-            raise CredentialStoreCorruptedError(
-                f"cannot decrypt {self.path}: wrong key or corrupt file"
-            ) from exc
+            raise CredentialStoreCorruptedError(f"cannot decrypt {self.path}: wrong key or corrupt file") from exc
         self._data = self._deserialize(plaintext)
 
     def _flush(self) -> None:

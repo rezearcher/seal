@@ -94,9 +94,7 @@ class TestCanonicalJSON:
         top_keys = list(json.loads(raw).keys())
         # cert_chain=None is omitted, so it won't appear
         expected = [f for f in _ENVELOPE_FIELDS if f not in ("signature", "cert_chain")]
-        assert top_keys == expected, (
-            f"expected field order {expected}, got {top_keys}"
-        )
+        assert top_keys == expected, f"expected field order {expected}, got {top_keys}"
 
     def test_field_ordering_with_cert_chain(self):
         """When cert_chain is present, it appears as the last field in canonical form."""
@@ -108,9 +106,7 @@ class TestCanonicalJSON:
 
         top_keys = list(json.loads(raw).keys())
         expected = [f for f in _ENVELOPE_FIELDS if f != "signature"]
-        assert top_keys == expected, (
-            f"expected field order {expected}, got {top_keys}"
-        )
+        assert top_keys == expected, f"expected field order {expected}, got {top_keys}"
 
     def test_scope_keys_sorted(self):
         """Scope dict keys must be sorted alphabetically in canonical form."""
@@ -124,9 +120,7 @@ class TestCanonicalJSON:
         scope_match = re.search(r'"scope":(\{[^}]+\})', raw)
         assert scope_match, "scope not found in output"
         scope_raw = scope_match.group(1)
-        assert scope_raw == '{"a":2,"m":3,"z":1}', (
-            f"scope not sorted, got {scope_raw}"
-        )
+        assert scope_raw == '{"a":2,"m":3,"z":1}', f"scope not sorted, got {scope_raw}"
 
     def test_cert_chain_included_when_present(self):
         """cert_chain must appear in canonical output when it has a value."""
@@ -170,9 +164,7 @@ class TestCanonicalJSON:
         for plen, expected_max in [(1, 200), (50, 250)]:
             env = self._make_envelope(prompt="X" * plen)
             overhead = len(_canonical_json(env))
-            assert overhead < expected_max, (
-                f"plen={plen}: overhead={overhead}B ≥ {expected_max}B"
-            )
+            assert overhead < expected_max, f"plen={plen}: overhead={overhead}B ≥ {expected_max}B"
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +200,20 @@ class TestSigning:
     def test_envelope_contains_all_fields(self, keys):
         env = vpe_sign("hello", private_key=keys["private_key"])
         data = json.loads(env)
-        expected = {"vpe_version", "prompt", "scope", "issuer", "audience",
-                    "doc_sha256", "iat", "ttl_seconds", "nonce", "counter",
-                    "cert_chain", "signature"}
+        expected = {
+            "vpe_version",
+            "prompt",
+            "scope",
+            "issuer",
+            "audience",
+            "doc_sha256",
+            "iat",
+            "ttl_seconds",
+            "nonce",
+            "counter",
+            "cert_chain",
+            "signature",
+        }
         assert set(data.keys()) == expected
 
     def test_version_is_current(self, keys):
@@ -289,9 +292,7 @@ class TestVerification:
 
 class TestTamperDetection:
     def _sign(self, keys):
-        return json.loads(
-            vpe_sign("hello", private_key=keys["private_key"])
-        )
+        return json.loads(vpe_sign("hello", private_key=keys["private_key"]))
 
     def _tamper(self, data):
         return json.dumps(data, separators=(",", ":"))
@@ -403,13 +404,9 @@ class TestReplayPrevention:
         assert result2["valid"] is True
 
     def test_missing_nonce_rejected(self, keys):
-        env = json.loads(
-            vpe_sign("hello", private_key=keys["private_key"])
-        )
+        env = json.loads(vpe_sign("hello", private_key=keys["private_key"]))
         env.pop("nonce")
-        result = vpe_verify(
-            json.dumps(env, separators=(",", ":")), public_key=keys["public_key"]
-        )
+        result = vpe_verify(json.dumps(env, separators=(",", ":")), public_key=keys["public_key"])
         assert result["valid"] is False
 
     def test_empty_nonce_rejected(self, keys):
@@ -460,9 +457,7 @@ class TestCounterSkip:
 
 class TestScopeViolation:
     def test_scope_must_be_dict(self, keys):
-        env = json.loads(
-            vpe_sign("hello", scope={"a": 1}, private_key=keys["private_key"])
-        )
+        env = json.loads(vpe_sign("hello", scope={"a": 1}, private_key=keys["private_key"]))
         env["scope"] = "not-a-dict"
         tampered = json.dumps(env, separators=(",", ":"))
         result = vpe_verify(tampered, public_key=keys["public_key"])
@@ -650,15 +645,11 @@ class TestTTL:
         assert result["valid"] is True
 
     def test_ttl_preserved_in_envelope(self, keys):
-        env = json.loads(
-            vpe_sign("hello", ttl_seconds=120, private_key=keys["private_key"])
-        )
+        env = json.loads(vpe_sign("hello", ttl_seconds=120, private_key=keys["private_key"]))
         assert env["ttl_seconds"] == 120
 
     def test_ttl_non_integer_rejected(self, keys):
-        env = json.loads(
-            vpe_sign("hello", ttl_seconds=120, private_key=keys["private_key"])
-        )
+        env = json.loads(vpe_sign("hello", ttl_seconds=120, private_key=keys["private_key"]))
         env["ttl_seconds"] = "not-an-int"
         tampered = json.dumps(env, separators=(",", ":"))
         result = vpe_verify(tampered, public_key=keys["public_key"])
@@ -686,17 +677,13 @@ class TestEdgeCases:
     def test_wrong_version(self, keys):
         env = json.loads(vpe_sign("hello", private_key=keys["private_key"]))
         env["vpe_version"] = "0.9"
-        result = vpe_verify(
-            json.dumps(env, separators=(",", ":")), public_key=keys["public_key"]
-        )
+        result = vpe_verify(json.dumps(env, separators=(",", ":")), public_key=keys["public_key"])
         assert result["valid"] is False
 
     def test_missing_signature_field(self, keys):
         env = json.loads(vpe_sign("hello", private_key=keys["private_key"]))
         env.pop("signature")
-        result = vpe_verify(
-            json.dumps(env, separators=(",", ":")), public_key=keys["public_key"]
-        )
+        result = vpe_verify(json.dumps(env, separators=(",", ":")), public_key=keys["public_key"])
         assert result["valid"] is False
 
     def test_long_prompt_round_trip(self, keys):
@@ -720,32 +707,24 @@ class TestEdgeCases:
 class TestKeyTimeConstraints:
     def test_not_before_rejects_early(self, keys):
         env = vpe_sign("hello", private_key=keys["private_key"])
-        result = vpe_verify(
-            env, public_key=keys["public_key"], not_before=int(time.time()) + 99999
-        )
+        result = vpe_verify(env, public_key=keys["public_key"], not_before=int(time.time()) + 99999)
         assert result["valid"] is False
         assert "key_not_yet_valid" in result["reason"]
 
     def test_not_before_passes_when_valid(self, keys):
         env = vpe_sign("hello", private_key=keys["private_key"])
-        result = vpe_verify(
-            env, public_key=keys["public_key"], not_before=int(time.time()) - 99999
-        )
+        result = vpe_verify(env, public_key=keys["public_key"], not_before=int(time.time()) - 99999)
         assert result["valid"] is True
 
     def test_not_after_rejects_expired(self, keys):
         env = vpe_sign("hello", private_key=keys["private_key"])
-        result = vpe_verify(
-            env, public_key=keys["public_key"], not_after=int(time.time()) - 1
-        )
+        result = vpe_verify(env, public_key=keys["public_key"], not_after=int(time.time()) - 1)
         assert result["valid"] is False
         assert "key_expired" in result["reason"]
 
     def test_not_after_passes_when_not_expired(self, keys):
         env = vpe_sign("hello", private_key=keys["private_key"])
-        result = vpe_verify(
-            env, public_key=keys["public_key"], not_after=int(time.time()) + 99999
-        )
+        result = vpe_verify(env, public_key=keys["public_key"], not_after=int(time.time()) + 99999)
         assert result["valid"] is True
 
 
@@ -762,8 +741,19 @@ class TestHMACSigning:
     def test_envelope_contains_all_fields(self, hmac_secret):
         env = vpe_sign_hmac("hello", shared_secret=hmac_secret)
         data = json.loads(env)
-        expected = {"vpe_version", "prompt", "scope", "issuer", "audience",
-                    "doc_sha256", "iat", "ttl_seconds", "nonce", "counter", "signature"}
+        expected = {
+            "vpe_version",
+            "prompt",
+            "scope",
+            "issuer",
+            "audience",
+            "doc_sha256",
+            "iat",
+            "ttl_seconds",
+            "nonce",
+            "counter",
+            "signature",
+        }
         assert set(data.keys()) == expected
 
     def test_signature_is_32_bytes(self, hmac_secret):
@@ -795,9 +785,7 @@ class TestHMACSigning:
             vpe_sign_hmac("hello", shared_secret=b"")
 
     def test_counter_preserved(self, hmac_secret):
-        env = json.loads(
-            vpe_sign_hmac("hello", counter=7, shared_secret=hmac_secret)
-        )
+        env = json.loads(vpe_sign_hmac("hello", counter=7, shared_secret=hmac_secret))
         assert env["counter"] == 7
 
 
@@ -920,9 +908,7 @@ class TestHMACEdgeCases:
     def test_wrong_version(self, hmac_secret):
         env = json.loads(vpe_sign_hmac("hello", shared_secret=hmac_secret))
         env["vpe_version"] = "0.9"
-        result = vpe_verify_hmac(
-            json.dumps(env, separators=(",", ":")), shared_secret=hmac_secret
-        )
+        result = vpe_verify_hmac(json.dumps(env, separators=(",", ":")), shared_secret=hmac_secret)
         assert result["valid"] is False
 
 
@@ -1106,15 +1092,17 @@ class TestMultiVerify:
 
     def test_missing_threshold_rejected(self, three_keys):
         k1 = three_keys[0]
-        env = json.loads(vpe_sign_multi(
-            prompt="missing threshold",
-            scope={},
-            issuer="user:test",
-            audience="agent:test",
-            threshold=1,
-            private_key=k1["private_key"],
-            key_id="alice",
-        ))
+        env = json.loads(
+            vpe_sign_multi(
+                prompt="missing threshold",
+                scope={},
+                issuer="user:test",
+                audience="agent:test",
+                threshold=1,
+                private_key=k1["private_key"],
+                key_id="alice",
+            )
+        )
         env.pop("threshold", None)
         tampered = json.dumps(env, separators=(",", ":"))
         result = vpe_verify_multi(
@@ -1125,15 +1113,17 @@ class TestMultiVerify:
 
     def test_missing_signatures_array_rejected(self, three_keys):
         k1 = three_keys[0]
-        env = json.loads(vpe_sign_multi(
-            prompt="missing sigs",
-            scope={},
-            issuer="user:test",
-            audience="agent:test",
-            threshold=1,
-            private_key=k1["private_key"],
-            key_id="alice",
-        ))
+        env = json.loads(
+            vpe_sign_multi(
+                prompt="missing sigs",
+                scope={},
+                issuer="user:test",
+                audience="agent:test",
+                threshold=1,
+                private_key=k1["private_key"],
+                key_id="alice",
+            )
+        )
         env.pop("signatures")
         tampered = json.dumps(env, separators=(",", ":"))
         result = vpe_verify_multi(
@@ -1576,10 +1566,17 @@ class TestCompactMode:
         assert overhead < 300, f"overhead={overhead}B, target <300B"
 
     def test_compact_preserves_nondefault_fields(self, keys):
-        env = vpe_sign("x", scope={"tools": ["read"]}, issuer="me",
-                       audience="agent:h", doc_sha256="abc123",
-                       ttl_seconds=60, counter=5, compact=True,
-                       private_key=keys["private_key"])
+        env = vpe_sign(
+            "x",
+            scope={"tools": ["read"]},
+            issuer="me",
+            audience="agent:h",
+            doc_sha256="abc123",
+            ttl_seconds=60,
+            counter=5,
+            compact=True,
+            private_key=keys["private_key"],
+        )
         data = json.loads(env)
         assert data["scope"] == {"tools": ["read"]}
         assert data["issuer"] == "me"
@@ -1589,28 +1586,23 @@ class TestCompactMode:
         assert data["counter"] == 5
 
     def test_compact_strips_empty_scope(self, keys):
-        data = json.loads(vpe_sign("x", compact=True,
-                                    private_key=keys["private_key"]))
+        data = json.loads(vpe_sign("x", compact=True, private_key=keys["private_key"]))
         assert "scope" not in data
 
     def test_compact_strips_empty_issuer(self, keys):
-        data = json.loads(vpe_sign("x", compact=True,
-                                    private_key=keys["private_key"]))
+        data = json.loads(vpe_sign("x", compact=True, private_key=keys["private_key"]))
         assert "issuer" not in data
 
     def test_compact_strips_default_ttl(self, keys):
-        data = json.loads(vpe_sign("x", ttl_seconds=300, compact=True,
-                                    private_key=keys["private_key"]))
+        data = json.loads(vpe_sign("x", ttl_seconds=300, compact=True, private_key=keys["private_key"]))
         assert "ttl_seconds" not in data
 
     def test_compact_strips_zero_ttl(self, keys):
-        data = json.loads(vpe_sign("x", ttl_seconds=0, compact=True,
-                                    private_key=keys["private_key"]))
+        data = json.loads(vpe_sign("x", ttl_seconds=0, compact=True, private_key=keys["private_key"]))
         assert "ttl_seconds" not in data
 
     def test_compact_always_has_prompt_nonce_signature(self, keys):
-        data = json.loads(vpe_sign("hello", compact=True,
-                                    private_key=keys["private_key"]))
+        data = json.loads(vpe_sign("hello", compact=True, private_key=keys["private_key"]))
         assert data["prompt"] == "hello"
         assert data["nonce"]
         assert data["signature"]
@@ -1633,11 +1625,10 @@ class TestCompactMode:
         assert result["valid"] is True, result["reason"]
 
     def test_compact_same_canonical_as_standard(self, keys):
-        std = json.loads(vpe_sign("x", nonce="fixed-nonce-001",
-                                   private_key=keys["private_key"]))
-        cpt = json.loads(vpe_sign("x", nonce="fixed-nonce-001", compact=True,
-                                   private_key=keys["private_key"]))
+        std = json.loads(vpe_sign("x", nonce="fixed-nonce-001", private_key=keys["private_key"]))
+        cpt = json.loads(vpe_sign("x", nonce="fixed-nonce-001", compact=True, private_key=keys["private_key"]))
         from seal.core import _canonical_json
+
         std_verify = dict(std)
         std_verify["signature"] = ""
         cpt_verify = dict(cpt)
@@ -1645,15 +1636,13 @@ class TestCompactMode:
         assert _canonical_json(std_verify) == _canonical_json(cpt_verify)
 
     def test_compact_preserves_audience(self, keys):
-        data = json.loads(vpe_sign("x", audience="agent:test", compact=True,
-                                    private_key=keys["private_key"]))
+        data = json.loads(vpe_sign("x", audience="agent:test", compact=True, private_key=keys["private_key"]))
         assert data["audience"] == "agent:test"
 
     def test_compact_ed25519_under_300_overhead(self, keys):
         for prompt_len in [1, 50, 200]:
             prompt = "X" * prompt_len
-            env = vpe_sign(prompt, compact=True,
-                           private_key=keys["private_key"])
+            env = vpe_sign(prompt, compact=True, private_key=keys["private_key"])
             overhead = len(env) - prompt_len
             assert overhead < 300, f"prompt_len={prompt_len}: overhead={overhead}B"
 
@@ -1683,20 +1672,18 @@ class TestVPEInterop:
         core returns JSON string, vpe expects dict — we convert and verify
         the field set is complete and valid.
         """
-        from seal import vpe as vpe_mod
         import json
 
+        from seal import vpe as vpe_mod
+
         sk, pk = keys["private_key"], keys["public_key"]
-        env_str = vpe_sign("interop test prompt", issuer="user:test",
-                           audience="agent:test", private_key=sk)
+        env_str = vpe_sign("interop test prompt", issuer="user:test", audience="agent:test", private_key=sk)
         env_dict = json.loads(env_str)
 
         # Verify that the converted envelope has all SIGNED_FIELDS
         signed = set(vpe_mod.SIGNED_FIELDS)
         envelope_keys = set(env_dict.keys()) - {"signature"}
-        assert signed.issubset(envelope_keys), (
-            f"vpe SIGNED_FIELDS missing from core envelope: {signed - envelope_keys}"
-        )
+        assert signed.issubset(envelope_keys), f"vpe SIGNED_FIELDS missing from core envelope: {signed - envelope_keys}"
 
         # Verify works (signature date is fresh)
         # core's canonicalisation uses ordered fields + defaults;
@@ -1711,15 +1698,16 @@ class TestVPEInterop:
         vpe returns dict, core expects JSON string — convert and verify
         the field set is complete.
         """
-        from seal import vpe as vpe_mod
         import json
 
+        from seal import vpe as vpe_mod
+
         sk, pk = keys["private_key"], keys["public_key"]
-        env_dict = vpe_mod.vpe_sign("interop test prompt", issuer="user:test",
-                                    audience="agent:test", private_key=sk)
+        env_dict = vpe_mod.vpe_sign("interop test prompt", issuer="user:test", audience="agent:test", private_key=sk)
 
         # core.vpe_verify uses _ENVELOPE_FIELDS; check all required fields present
         from seal.core import _ENVELOPE_FIELDS
+
         envelope_keys = set(env_dict.keys()) - {"signature", "public_key"}
         core_fields = set(_ENVELOPE_FIELDS)
         assert core_fields.issubset(envelope_keys), (
@@ -1733,13 +1721,18 @@ class TestVPEInterop:
 
     def test_core_sign_vpe_verify_with_cert_chain(self, keys):
         """Interop with cert_chain included."""
-        from seal import vpe as vpe_mod
         import json
 
+        from seal import vpe as vpe_mod
+
         sk, pk = keys["private_key"], keys["public_key"]
-        env_str = vpe_sign("interop cert test", issuer="user:rez",
-                           audience="agent:hermes", private_key=sk,
-                           cert_chain=[{"subject_id": "leaf"}])
+        env_str = vpe_sign(
+            "interop cert test",
+            issuer="user:rez",
+            audience="agent:hermes",
+            private_key=sk,
+            cert_chain=[{"subject_id": "leaf"}],
+        )
         env_dict = json.loads(env_str)
 
         result = vpe_mod.vpe_verify(env_dict, public_key=pk)
@@ -1747,13 +1740,14 @@ class TestVPEInterop:
 
     def test_vpe_sign_core_verify_with_cert_chain(self, keys):
         """Interop with cert_chain included, reverse direction."""
-        from seal import vpe as vpe_mod
         import json
 
+        from seal import vpe as vpe_mod
+
         sk, pk = keys["private_key"], keys["public_key"]
-        env_dict = vpe_mod.vpe_sign("interop cert reverse", issuer="user:rez",
-                                    audience="agent:hermes", private_key=sk,
-                                    public_key=pk)
+        env_dict = vpe_mod.vpe_sign(
+            "interop cert reverse", issuer="user:rez", audience="agent:hermes", private_key=sk, public_key=pk
+        )
         env_str = json.dumps(env_dict)
 
         result = vpe_verify(env_str, public_key=pk)
@@ -1764,12 +1758,12 @@ class TestVPEInterop:
         from seal import vpe as vpe_mod
 
         sk, pk = keys["private_key"], keys["public_key"]
-        env_str = vpe_sign("tamper test", issuer="user:rez",
-                           audience="agent:hermes", private_key=sk)
+        env_str = vpe_sign("tamper test", issuer="user:rez", audience="agent:hermes", private_key=sk)
         # Tamper by modifying the prompt in the JSON string
         env_str_tampered = env_str.replace('"tamper test"', '"tampered prompt"')
 
         import json
+
         env_dict = json.loads(env_str_tampered)
         result = vpe_mod.vpe_verify(env_dict, public_key=pk)
         assert not result.valid

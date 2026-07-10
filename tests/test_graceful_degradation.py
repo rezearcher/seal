@@ -9,6 +9,7 @@ Covers:
   - Tool skip list bypass
   - VPE disabled state
 """
+
 from __future__ import annotations
 
 import sys
@@ -30,6 +31,7 @@ from seal.vpe import VPE_VERSION, generate_keypair, vpe_sign  # noqa: E402
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def keys():
@@ -74,7 +76,7 @@ def expired_envelope(keys):
         "issuer": "user:rez",
         "audience": "agent:hermes-default",
         "doc_sha256": "deadbeef",
-        "ttl_seconds": 60,   # 60 second TTL
+        "ttl_seconds": 60,  # 60 second TTL
         "iat": past_time,
         "nonce": "expired-nonce-test",
         "counter": 1,
@@ -106,11 +108,13 @@ def tampered_envelope(keys):
 def middleware_audit(tmp_path, keys):
     """Middleware in audit (lenient) mode with a temp key dir."""
     sk, pk = keys
-    mw = VPEMiddleware({
-        "vpe_enabled": True,
-        "vpe_mode": "audit",
-        "vpe_key_dir": str(tmp_path),
-    })
+    mw = VPEMiddleware(
+        {
+            "vpe_enabled": True,
+            "vpe_mode": "audit",
+            "vpe_key_dir": str(tmp_path),
+        }
+    )
     mw.ensure_keys()
     # Override public key with the same keypair used by signed_envelope fixture
     mw._public_key = pk
@@ -121,11 +125,13 @@ def middleware_audit(tmp_path, keys):
 def middleware_enforce(tmp_path, keys):
     """Middleware in enforce (strict) mode with a temp key dir."""
     sk, pk = keys
-    mw = VPEMiddleware({
-        "vpe_enabled": True,
-        "vpe_mode": "enforce",
-        "vpe_key_dir": str(tmp_path),
-    })
+    mw = VPEMiddleware(
+        {
+            "vpe_enabled": True,
+            "vpe_mode": "enforce",
+            "vpe_key_dir": str(tmp_path),
+        }
+    )
     mw.ensure_keys()
     # Override public key with the same keypair used by signed_envelope fixture
     mw._public_key = pk
@@ -135,6 +141,7 @@ def middleware_enforce(tmp_path, keys):
 # ---------------------------------------------------------------------------
 # Test: Unsigned prompts (raw text, no envelope)
 # ---------------------------------------------------------------------------
+
 
 class TestUnsignedPrompts:
     """P6.3: Unsigned prompts must work, logged as 'unverified'."""
@@ -192,6 +199,7 @@ class TestUnsignedPrompts:
 # ---------------------------------------------------------------------------
 # Test: Expired envelopes
 # ---------------------------------------------------------------------------
+
 
 class TestExpiredEnvelopes:
     """P6.3: Expired envelopes logged, prompt still executed."""
@@ -270,6 +278,7 @@ class TestExpiredEnvelopes:
 # Test: Invalid signatures
 # ---------------------------------------------------------------------------
 
+
 class TestInvalidSignatures:
     """P6.3: Invalid signatures rejected in strict mode, warned in audit."""
 
@@ -318,6 +327,7 @@ class TestInvalidSignatures:
 # Test: Valid envelopes
 # ---------------------------------------------------------------------------
 
+
 class TestValidEnvelopes:
     """Valid envelopes pass all checks, no degradation."""
 
@@ -350,6 +360,7 @@ class TestValidEnvelopes:
 # Test: Tool skip list
 # ---------------------------------------------------------------------------
 
+
 class TestToolSkipList:
     """Tools in the skip list bypass all VPE checks."""
 
@@ -379,6 +390,7 @@ class TestToolSkipList:
 # ---------------------------------------------------------------------------
 # Test: VPE disabled
 # ---------------------------------------------------------------------------
+
 
 class TestVPEDisabled:
     """When VPE is disabled, all tool calls pass through."""
@@ -411,6 +423,7 @@ class TestVPEDisabled:
 # ---------------------------------------------------------------------------
 # Test: VPECheckResult serialization
 # ---------------------------------------------------------------------------
+
 
 class TestVPECheckResult:
     """VPECheckResult serialization and state reporting."""

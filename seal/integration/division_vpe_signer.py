@@ -75,6 +75,7 @@ try:
         vpe_sign,
         vpe_verify,
     )
+
     _SEAL_AVAILABLE = True
 except ImportError:
     _SEAL_AVAILABLE = False
@@ -83,6 +84,7 @@ except ImportError:
 # Persistent nonce store for replay protection across process restarts
 try:
     from seal.store import NonceStore
+
     _NONCE_STORE_AVAILABLE = True
 except ImportError:
     _NONCE_STORE_AVAILABLE = False
@@ -91,6 +93,7 @@ except ImportError:
 # Try to import Division audit (may not be available)
 try:
     from seal.integration.division_vpe_audit import DivisionVPEAudit
+
     _AUDIT_AVAILABLE = True
 except ImportError:
     _AUDIT_AVAILABLE = False
@@ -223,8 +226,7 @@ class DivisionVPESigner:
             # as an unreliable identifier for cross-referencing.
             env_hash = "degraded:" + envelope.get("nonce", "unknown")[:16]
             logger.warning(
-                "DivisionVPE: envelope canonicalization failed for issuer='%s' — "
-                "using degraded hash '%s'",
+                "DivisionVPE: envelope canonicalization failed for issuer='%s' — using degraded hash '%s'",
                 envelope.get("issuer", self._agent_name),
                 env_hash,
             )
@@ -317,12 +319,15 @@ class DivisionVPESigner:
             return value
 
         # Create a prompt-like string from the episode metadata + value
-        sign_prompt = json.dumps({
-            "domain": domain or "",
-            "agent": agent or self._agent_name,
-            "key": key or "",
-            "value": value_json,
-        }, sort_keys=True)
+        sign_prompt = json.dumps(
+            {
+                "domain": domain or "",
+                "agent": agent or self._agent_name,
+                "key": key or "",
+                "value": value_json,
+            },
+            sort_keys=True,
+        )
 
         # Additional context for the VPE envelope
         scope = {
@@ -356,7 +361,8 @@ class DivisionVPESigner:
 
             logger.info(
                 "DivisionVPE: signed memory episode for domain='%s' agent='%s'",
-                domain, agent,
+                domain,
+                agent,
             )
 
             # P6.4b: Record successful sign in audit trail

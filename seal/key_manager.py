@@ -155,9 +155,7 @@ def _read_machine_id() -> bytes | None:
     return None
 
 
-def _derive_fernet_key(
-    master_key_bytes: bytes, use_machine_id: bool = False
-) -> bytes:
+def _derive_fernet_key(master_key_bytes: bytes, use_machine_id: bool = False) -> bytes:
     """Derive the effective Fernet key, optionally XOR'd with machine-id.
 
     XOR provides a cheap second factor: a key stolen from a different host
@@ -359,9 +357,7 @@ class KeyManager:
                         row["kid"],
                     )
             for encrypted, kid in updates:
-                conn.execute(
-                    "UPDATE keys SET private_key=? WHERE kid=?", (encrypted, kid)
-                )
+                conn.execute("UPDATE keys SET private_key=? WHERE kid=?", (encrypted, kid))
             if updates:
                 conn.commit()
         finally:
@@ -516,9 +512,7 @@ class KeyManager:
         conn = self._connect()
         try:
             # Capture the prior status so we know whether to auto-rotate.
-            prior = conn.execute(
-                "SELECT status FROM keys WHERE kid=?", (kid,)
-            ).fetchone()
+            prior = conn.execute("SELECT status FROM keys WHERE kid=?", (kid,)).fetchone()
             cur = conn.execute(
                 "UPDATE keys SET status=?, revoked_at=?, revoke_reason=? WHERE kid=?",
                 (STATUS_REVOKED, now, reason, kid),
@@ -589,9 +583,7 @@ class KeyManager:
         conn = self._connect()
         try:
             if status is None:
-                rows = conn.execute(
-                    "SELECT * FROM keys ORDER BY created_at DESC, kid DESC"
-                ).fetchall()
+                rows = conn.execute("SELECT * FROM keys ORDER BY created_at DESC, kid DESC").fetchall()
             else:
                 rows = conn.execute(
                     "SELECT * FROM keys WHERE status=? ORDER BY created_at DESC",
@@ -751,9 +743,7 @@ class KeyManager:
             active = km.get_active_key()
             if active:
                 not_after = active.get("not_after", 0)
-                remaining_days = (
-                    (not_after - now) / _SECONDS_PER_DAY if not_after > 0 else float("inf")
-                )
+                remaining_days = (not_after - now) / _SECONDS_PER_DAY if not_after > 0 else float("inf")
                 if not_after > 0 and remaining_days <= days_before:
                     new_key = km.rotate_key()
                     print(
@@ -764,21 +754,13 @@ class KeyManager:
                 elif not_after > 0 and now >= not_after:
                     # Already expired — rotate immediately
                     new_key = km.rotate_key()
-                    print(
-                        f"[seal-rotator] rotated expired key {active['kid']} → "
-                        f"{new_key['kid']}"
-                    )
+                    print(f"[seal-rotator] rotated expired key {active['kid']} → {new_key['kid']}")
                 else:
-                    print(
-                        f"[seal-rotator] key {active['kid']} OK "
-                        f"({remaining_days:.1f}d remaining)"
-                    )
+                    print(f"[seal-rotator] key {active['kid']} OK ({remaining_days:.1f}d remaining)")
             else:
                 # No active key — generate one
                 new_key = km.generate_key()
-                print(
-                    f"[seal-rotator] no active key — generated {new_key['kid']}"
-                )
+                print(f"[seal-rotator] no active key — generated {new_key['kid']}")
 
             if once:
                 break

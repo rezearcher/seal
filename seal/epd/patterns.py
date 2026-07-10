@@ -63,18 +63,18 @@ _SEP = r"[\s\W]{0,5}"
 # Used by _obf() so that leet variants are matched directly in the regex,
 # rather than relying solely on the normalization pass.
 _LEET_CLASSES = {
-    "a": r"[a4@\u0430\u03B1]",   # a,4,@, Cyrillic а, Greek α
-    "e": r"[e3\u0435\u03B5]",     # e,3, Cyrillic е, Greek ε
-    "i": r"[i1!\u0456]",          # i,1,!, Cyrillic і
-    "l": r"[l1!|]",               # l,1,!,|
-    "o": r"[o0\u043E\u03BF]",     # o,0, Cyrillic о, Greek ο
-    "s": r"[s5$\u0455]",          # s,5,$, Cyrillic ѕ
-    "t": r"[t7+]",                # t,7,+
-    "g": r"[g9\u0121]",              # g,9, ġ
+    "a": r"[a4@\u0430\u03B1]",  # a,4,@, Cyrillic а, Greek α
+    "e": r"[e3\u0435\u03B5]",  # e,3, Cyrillic е, Greek ε
+    "i": r"[i1!\u0456]",  # i,1,!, Cyrillic і
+    "l": r"[l1!|]",  # l,1,!,|
+    "o": r"[o0\u043E\u03BF]",  # o,0, Cyrillic о, Greek ο
+    "s": r"[s5$\u0455]",  # s,5,$, Cyrillic ѕ
+    "t": r"[t7+]",  # t,7,+
+    "g": r"[g9\u0121]",  # g,9, ġ
     "c": r"[c\u0441\u03F2\u0188]",  # c, Cyrillic с, ƈ
-    "p": r"[p\u0440\u03C1]",     # p, Cyrillic р, Greek ρ
-    "x": r"[x\u0445]",           # x, Cyrillic х
-    "y": r"[y\u0443\u03BD]",     # y, Cyrillic у, Greek ν (looks like y)
+    "p": r"[p\u0440\u03C1]",  # p, Cyrillic р, Greek ρ
+    "x": r"[x\u0445]",  # x, Cyrillic х
+    "y": r"[y\u0443\u03BD]",  # y, Cyrillic у, Greek ν (looks like y)
 }
 
 
@@ -216,9 +216,7 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         "dan_jailbreak",
         "role_switch",
         0.92,
-        r"\b(?:"
-        + _obf("do anything now")
-        + r"|\bdan\b|\bstan\b)",
+        r"\b(?:" + _obf("do anything now") + r"|\bdan\b|\bstan\b)",
         _I,
     ),
     (
@@ -491,9 +489,13 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         "interleaving_ignore_instructions",
         "ignore_instructions",
         0.8,
-        _obf("ignore") + r"[\s\S]{0,20}?" + _obf("all")
-        + r"[\s\S]{0,20}?" + _alt(
-            "previous instructions", "prior instructions",
+        _obf("ignore")
+        + r"[\s\S]{0,20}?"
+        + _obf("all")
+        + r"[\s\S]{0,20}?"
+        + _alt(
+            "previous instructions",
+            "prior instructions",
             "instructions above",
         ),
         _I,
@@ -502,11 +504,20 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         "interleaving_forget_instructions",
         "ignore_instructions",
         0.78,
-        _obf("forget") + r"[\s\S]{0,20}?" + _alt(
-            "all your", "your", "everything",
-        ) + r"[\s\S]{0,20}?" + _alt(
-            "instructions", "directives", "guidelines",
-            "training", "programming",
+        _obf("forget")
+        + r"[\s\S]{0,20}?"
+        + _alt(
+            "all your",
+            "your",
+            "everything",
+        )
+        + r"[\s\S]{0,20}?"
+        + _alt(
+            "instructions",
+            "directives",
+            "guidelines",
+            "training",
+            "programming",
         ),
         _I,
     ),
@@ -515,11 +526,20 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         "ignore_instructions",
         0.75,
         _alt("override", "supersede", "overrule")
-        + r"[\s\S]{0,20}?" + _alt(
-            "your", "previous", "prior", "the",
-        ) + r"[\s\S]{0,20}?" + _alt(
-            "instructions", "directives", "orders",
-            "system prompt", "commands",
+        + r"[\s\S]{0,20}?"
+        + _alt(
+            "your",
+            "previous",
+            "prior",
+            "the",
+        )
+        + r"[\s\S]{0,20}?"
+        + _alt(
+            "instructions",
+            "directives",
+            "orders",
+            "system prompt",
+            "commands",
         ),
         _I,
     ),
@@ -528,13 +548,30 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         "ignore_synonym_broad",
         "ignore_instructions",
         0.75,
-        r"\b(?:" + _obf("ignore") + r"|" + _obf("skip") + r"|" + _obf("bypass")
-        + r"|" + _obf("dismiss") + r"|" + _obf("discard")
-        + r"|" + _obf("disobey") + r"|" + _obf("omit")
-        + r")[\s\S]{0,15}?" + _alt("all", "your", "the", "these", "previous", "prior")
-        + r"[\s\S]{0,15}?" + _alt(
-            "instructions", "directives", "commands",
-            "rules", "guidelines", "orders",
+        r"\b(?:"
+        + _obf("ignore")
+        + r"|"
+        + _obf("skip")
+        + r"|"
+        + _obf("bypass")
+        + r"|"
+        + _obf("dismiss")
+        + r"|"
+        + _obf("discard")
+        + r"|"
+        + _obf("disobey")
+        + r"|"
+        + _obf("omit")
+        + r")[\s\S]{0,15}?"
+        + _alt("all", "your", "the", "these", "previous", "prior")
+        + r"[\s\S]{0,15}?"
+        + _alt(
+            "instructions",
+            "directives",
+            "commands",
+            "rules",
+            "guidelines",
+            "orders",
         ),
         _I,
     ),
@@ -542,13 +579,30 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         "forget_synonym_broad",
         "ignore_instructions",
         0.7,
-        r"\b(?:" + _obf("forget") + r"|" + _obf("erase") + r"|" + _obf("delete")
-        + r"|" + _obf("wipe") + r"|" + _obf("purge") + r"|" + _obf("clear")
-        + r"|" + _obf("unlearn")
-        + r")[\s\S]{0,15}?" + _alt("all", "your", "the", "these", "prior")
-        + r"[\s\S]{0,15}?" + _alt(
-            "instructions", "directives", "commands",
-            "rules", "guidelines", "training",
+        r"\b(?:"
+        + _obf("forget")
+        + r"|"
+        + _obf("erase")
+        + r"|"
+        + _obf("delete")
+        + r"|"
+        + _obf("wipe")
+        + r"|"
+        + _obf("purge")
+        + r"|"
+        + _obf("clear")
+        + r"|"
+        + _obf("unlearn")
+        + r")[\s\S]{0,15}?"
+        + _alt("all", "your", "the", "these", "prior")
+        + r"[\s\S]{0,15}?"
+        + _alt(
+            "instructions",
+            "directives",
+            "commands",
+            "rules",
+            "guidelines",
+            "training",
         ),
         _I,
     ),
@@ -556,11 +610,22 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         "disregard_synonym_broad",
         "ignore_instructions",
         0.72,
-        r"\b(?:" + _obf("disregard") + r"|" + _obf("overlook") + r"|" + _obf("neglect")
-        + r")[\s\S]{0,15}?" + _alt("all", "your", "the", "these", "previous", "prior", "above")
-        + r"[\s\S]{0,15}?" + _alt(
-            "instructions", "directives", "commands",
-            "rules", "guidelines", "training",
+        r"\b(?:"
+        + _obf("disregard")
+        + r"|"
+        + _obf("overlook")
+        + r"|"
+        + _obf("neglect")
+        + r")[\s\S]{0,15}?"
+        + _alt("all", "your", "the", "these", "previous", "prior", "above")
+        + r"[\s\S]{0,15}?"
+        + _alt(
+            "instructions",
+            "directives",
+            "commands",
+            "rules",
+            "guidelines",
+            "training",
         ),
         _I,
     ),
@@ -571,9 +636,10 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         "reordered_ignore_phrase",
         "ignore_instructions",
         0.7,
-        r"\b(?:" + _alt("instructions", "directives", "commands", "rules", "guidelines")
-        + r"[\s\S]{0,15}?" + _alt("ignore", "skip", "bypass", "forget", "disregard",
-                                   "dismiss", "discard", "erase", "delete")
+        r"\b(?:"
+        + _alt("instructions", "directives", "commands", "rules", "guidelines")
+        + r"[\s\S]{0,15}?"
+        + _alt("ignore", "skip", "bypass", "forget", "disregard", "dismiss", "discard", "erase", "delete")
         + r")\b",
         _I,
     ),
@@ -581,9 +647,10 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         "reordered_training_phrase",
         "ignore_instructions",
         0.65,
-        r"\b(?:" + _alt("training", "programming", "alignment", "core values", "foundation")
-        + r"[\s\S]{0,15}?" + _alt("ignore", "skip", "forget", "disregard", "erase",
-                                   "discard", "dismiss")
+        r"\b(?:"
+        + _alt("training", "programming", "alignment", "core values", "foundation")
+        + r"[\s\S]{0,15}?"
+        + _alt("ignore", "skip", "forget", "disregard", "erase", "discard", "dismiss")
         + r")\b",
         _I,
     ),
@@ -592,14 +659,25 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         "act_as_unrestricted_synonym",
         "role_switch",
         0.78,
-        r"\b(?:" + _alt("act as", "pretend to be", "pretend you", "roleplay",
-                         "behave as", "respond as", "imagine you are")
-        + r"[\s\S]{0,40}?" + r"\b(?:" + _alt("unrestricted", "unfiltered", "uncensored",
-                                               "without restrictions", "without rules",
-                                               "without limits", "without guidelines",
-                                               "without guardrails", "without filters",
-                                               "with no rules", "with no limits",
-                                               "free from rules", "no constraints")
+        r"\b(?:"
+        + _alt("act as", "pretend to be", "pretend you", "roleplay", "behave as", "respond as", "imagine you are")
+        + r"[\s\S]{0,40}?"
+        + r"\b(?:"
+        + _alt(
+            "unrestricted",
+            "unfiltered",
+            "uncensored",
+            "without restrictions",
+            "without rules",
+            "without limits",
+            "without guidelines",
+            "without guardrails",
+            "without filters",
+            "with no rules",
+            "with no limits",
+            "free from rules",
+            "no constraints",
+        )
         + r")\b)",
         _I,
     ),
@@ -610,28 +688,67 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         "deletion_tolerant_ignore_phrase",
         "ignore_instructions",
         0.7,
-        r"\b" + _alt("ignore", "ignor", "ignre", "igore", "gnore",
-                      "forget", "forgt", "forget", "foget",
-                      "disregard", "disregad", "disregrd", "disreard")
+        r"\b"
+        + _alt(
+            "ignore",
+            "ignor",
+            "ignre",
+            "igore",
+            "gnore",
+            "forget",
+            "forgt",
+            "forget",
+            "foget",
+            "disregard",
+            "disregad",
+            "disregrd",
+            "disreard",
+        )
         + r"[\s\S]{0,15}?"
         + _alt("all", "your", "the", "these", "previous", "prior", "above")
         + r"[\s\S]{0,15}?"
-        + _alt("instructions", "instructios", "instructins", "instrctions",
-        "instructons", "istructions", "instrucions", "instructins",
-        "directives", "directivs", "directves",
-        "guidelines", "guidelins", "guielines",
-        "commands", "commnds"),
+        + _alt(
+            "instructions",
+            "instructios",
+            "instructins",
+            "instrctions",
+            "instructons",
+            "istructions",
+            "instrucions",
+            "instructins",
+            "directives",
+            "directivs",
+            "directves",
+            "guidelines",
+            "guidelins",
+            "guielines",
+            "commands",
+            "commnds",
+        ),
         _I,
     ),
     (
         "deletion_tolerant_role_switch",
         "role_switch",
         0.7,
-        r"\b" + _alt("unrestricted", "unresticted", "unrestrited",
-                      "unfiltered", "unfilered", "unfitered",
-                      "uncensored", "uncensred", "uncenored",
-                      "jailbroken", "jailbroen", "jailboken")
-        + r"[\s\S]{0,20}?" + r"\b" + _alt("mode", "mod", "moe"),
+        r"\b"
+        + _alt(
+            "unrestricted",
+            "unresticted",
+            "unrestrited",
+            "unfiltered",
+            "unfilered",
+            "unfitered",
+            "uncensored",
+            "uncensred",
+            "uncenored",
+            "jailbroken",
+            "jailbroen",
+            "jailboken",
+        )
+        + r"[\s\S]{0,20}?"
+        + r"\b"
+        + _alt("mode", "mod", "moe"),
         _I,
     ),
     # ---- 12. Latent / indirect injection patterns -------------------------- #
@@ -783,7 +900,6 @@ _PATTERNS: tuple[tuple[str, str, float, str, int], ...] = (
         _I,
     ),
 )
-
 
 
 def _compile() -> tuple[CompiledPattern, ...]:

@@ -173,11 +173,7 @@ class AuditRecord:
         )
 
     def __repr__(self) -> str:
-        return (
-            f"<AuditRecord {self.result}: "
-            f"issuer={self.issuer!r} "
-            f"hash={self.envelope_hash[:16] or 'N/A'}...>"
-        )
+        return f"<AuditRecord {self.result}: issuer={self.issuer!r} hash={self.envelope_hash[:16] or 'N/A'}...>"
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +213,9 @@ class _DivisionClient:
         except urllib.error.HTTPError as exc:
             logger.warning(
                 "Division HTTP %s on POST %s: %s",
-                exc.code, path, exc.read().decode()[:200],
+                exc.code,
+                path,
+                exc.read().decode()[:200],
             )
             return None
         except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -241,7 +239,9 @@ class _DivisionClient:
         except urllib.error.HTTPError as exc:
             logger.warning(
                 "Division HTTP %s on GET %s: %s",
-                exc.code, path, exc.read().decode()[:200],
+                exc.code,
+                path,
+                exc.read().decode()[:200],
             )
             return None
         except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -470,12 +470,16 @@ class DivisionAuditTrail:
         if episode_id:
             logger.debug(
                 "Audit: recorded %s verification for issuer=%s hash=%s episode=%s",
-                result, issuer, envelope_hash[:16], episode_id,
+                result,
+                issuer,
+                envelope_hash[:16],
+                episode_id,
             )
         else:
             logger.warning(
                 "Audit: failed to record verification for issuer=%s hash=%s",
-                issuer, envelope_hash[:16],
+                issuer,
+                envelope_hash[:16],
             )
 
         return episode_id

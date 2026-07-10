@@ -49,6 +49,7 @@ try:
     from seal.vpe import (
         vpe_verify as _vpe_verify_raw,
     )
+
     _SEAL_AVAILABLE = True
 except ImportError:
     _SEAL_AVAILABLE = False
@@ -95,6 +96,7 @@ def _load_config() -> dict[str, Any]:
     # Try loading from Hermes config
     try:
         from hermes_cli.config import load_config
+
         cfg = load_config()
         sec = cfg.get("security", {}) or {}
         vpe_cfg = sec.get("vpe", {}) or {}
@@ -359,7 +361,7 @@ class VPEMiddleware:
         Returns:
             VPECheckResult with the decision and degradation detail.
         """
-        is_enforce = (self._mode == "enforce")
+        is_enforce = self._mode == "enforce"
 
         # Stage 1: Disabled
         if not self._enabled:
@@ -368,7 +370,8 @@ class VPEMiddleware:
         # Stage 2: Skip tools
         if tool_name in self._skip_tools:
             return VPECheckResult(
-                True, "allow",
+                True,
+                "allow",
                 f"tool '{tool_name}' is in skip list",
                 mode=self._mode,
             )
@@ -391,7 +394,8 @@ class VPEMiddleware:
             logger.warning("VPE (unsigned): %s", reason)
             # Unsigned prompts always work (core backward-compatibility constraint)
             return VPECheckResult(
-                True, "allow",
+                True,
+                "allow",
                 reason,
                 verified=False,
                 degradation="unsigned",
@@ -406,8 +410,12 @@ class VPEMiddleware:
             else:
                 logger.warning("VPE (audit): %s", reason)
                 return VPECheckResult(
-                    False, "audit_logged", reason,
-                    verified=False, degradation="verify_error", mode=self._mode,
+                    False,
+                    "audit_logged",
+                    reason,
+                    verified=False,
+                    degradation="verify_error",
+                    mode=self._mode,
                 )
 
         # 5a: Try to verify the envelope
@@ -422,8 +430,11 @@ class VPEMiddleware:
                 else:
                     logger.warning("VPE (audit): %s", reason)
                     return VPECheckResult(
-                        False, "audit_logged", reason,
-                        degradation="verify_error", mode=self._mode,
+                        False,
+                        "audit_logged",
+                        reason,
+                        degradation="verify_error",
+                        mode=self._mode,
                     )
         else:
             envelope = prompt_envelope
@@ -434,8 +445,12 @@ class VPEMiddleware:
             reason = "UNSIGNED PROMPT: envelope is not a dict — logged as unverified"
             logger.warning("VPE (unsigned): %s", reason)
             return VPECheckResult(
-                True, "allow", reason,
-                verified=False, degradation="unsigned", mode=self._mode,
+                True,
+                "allow",
+                reason,
+                verified=False,
+                degradation="unsigned",
+                mode=self._mode,
             )
 
         # 5c: Check if this looks like a VPE envelope (has signature field)
@@ -444,8 +459,12 @@ class VPEMiddleware:
             reason = "UNSIGNED PROMPT: envelope has no signature — logged as unverified"
             logger.warning("VPE (unsigned): %s", reason)
             return VPECheckResult(
-                True, "allow", reason,
-                verified=False, degradation="unsigned", mode=self._mode,
+                True,
+                "allow",
+                reason,
+                verified=False,
+                degradation="unsigned",
+                mode=self._mode,
             )
 
         # 5d: Check expiry FIRST (before crypto verify — it might be a
@@ -455,7 +474,8 @@ class VPEMiddleware:
             logger.warning("VPE (expired): %s — allowing execution", expiry_reason)
             # Expired envelopes are allowed in both modes (P6.3 spec)
             return VPECheckResult(
-                True, "allow",
+                True,
+                "allow",
                 f"EXPIRED ENVELOPE: {expiry_reason} (mode: {self._mode})",
                 degradation="expired",
                 mode=self._mode,
@@ -476,8 +496,11 @@ class VPEMiddleware:
             else:
                 logger.warning("VPE (audit): %s", reason)
                 return VPECheckResult(
-                    False, "audit_logged", reason,
-                    degradation="verify_error", mode=self._mode,
+                    False,
+                    "audit_logged",
+                    reason,
+                    degradation="verify_error",
+                    mode=self._mode,
                 )
 
         # 5f: Handle verification result with graceful degradation
@@ -491,7 +514,8 @@ class VPEMiddleware:
                 # Expired envelopes allowed in both modes
                 logger.warning("VPE (expired): %s — allowing execution", reason)
                 return VPECheckResult(
-                    True, "allow",
+                    True,
+                    "allow",
                     f"EXPIRED ENVELOPE: {reason} (mode: {self._mode})",
                     degradation="expired",
                     mode=self._mode,
@@ -500,7 +524,8 @@ class VPEMiddleware:
             # This is an invalid signature or other crypto failure
             if is_enforce:
                 return VPECheckResult(
-                    False, "deny",
+                    False,
+                    "deny",
                     f"VPE BLOCKED: {reason}",
                     degradation="invalid_signature",
                     mode=self._mode,
@@ -508,7 +533,8 @@ class VPEMiddleware:
             else:
                 logger.warning("VPE (audit): %s", reason)
                 return VPECheckResult(
-                    False, "audit_logged",
+                    False,
+                    "audit_logged",
                     f"VPE INVALID (audit mode): {reason}",
                     degradation="invalid_signature",
                     mode=self._mode,
@@ -596,20 +622,26 @@ def on_pre_tool_call(
             log_fn = logger.error
         log_fn(
             "VPE %s: tool='%s' allowed=%s reason='%s' mode='%s'",
-            prefix, tool_name_str, result.allowed, result.reason, result.mode,
+            prefix,
+            tool_name_str,
+            result.allowed,
+            result.reason,
+            result.mode,
         )
 
     if not result.allowed and result.decision == "deny":
         logger.warning(
             "VPE blocked tool call '%s': %s",
-            tool_name_str, result.reason,
+            tool_name_str,
+            result.reason,
         )
         return {"veto": True, "reason": f"[VPE BLOCKED] {result.reason}"}
 
     if result.decision == "audit_logged":
         logger.info(
             "VPE audit: tool '%s' would have been blocked: %s",
-            tool_name_str, result.reason,
+            tool_name_str,
+            result.reason,
         )
 
     return None

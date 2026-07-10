@@ -1,4 +1,5 @@
 """Tests for seal.integration.division_vpe_audit (P6.4b)."""
+
 from __future__ import annotations
 
 import json
@@ -13,6 +14,7 @@ from seal.vpe import generate_keypair, vpe_sign, vpe_verify
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def keypair():
@@ -37,18 +39,22 @@ def mock_remember():
     def remember(conversation_id="", agent="", key="", value=None, **kwargs):
         if value is None:
             value = {}
-        _captured.append({
-            "conversation_id": conversation_id,
-            "agent": agent,
-            "key": key,
-            "value": value,
-            "kwargs": kwargs,
-        })
-        return {
-            "result": json.dumps({
-                "episode_id": f"ep_{len(_captured)}_{int(time.time())}",
+        _captured.append(
+            {
                 "conversation_id": conversation_id,
-            })
+                "agent": agent,
+                "key": key,
+                "value": value,
+                "kwargs": kwargs,
+            }
+        )
+        return {
+            "result": json.dumps(
+                {
+                    "episode_id": f"ep_{len(_captured)}_{int(time.time())}",
+                    "conversation_id": conversation_id,
+                }
+            )
         }
 
     remember.captured = _captured
@@ -59,6 +65,7 @@ def mock_remember():
 def sealer_audit(audit_log, mock_remember):
     """A fully configured DivisionVPEAudit with mock Division."""
     from seal.integration.division_vpe_audit import DivisionVPEAudit
+
     return DivisionVPEAudit(
         audit_log=audit_log,
         conversation_id="test-vpe-audit",
@@ -70,6 +77,7 @@ def sealer_audit(audit_log, mock_remember):
 def local_only_audit(audit_log):
     """A DivisionVPEAudit without a Division back-end (fallback test)."""
     from seal.integration.division_vpe_audit import DivisionVPEAudit
+
     return DivisionVPEAudit(
         audit_log=audit_log,
         conversation_id="test-vpe-audit-local",
@@ -80,6 +88,7 @@ def local_only_audit(audit_log):
 # ---------------------------------------------------------------------------
 # Episode schema
 # ---------------------------------------------------------------------------
+
 
 def test_episode_schema(sealer_audit, mock_remember):
     """Each episode contains required fields."""
@@ -136,6 +145,7 @@ def test_invalid_result_raises(sealer_audit):
 # Local fallback (P6.4a)
 # ---------------------------------------------------------------------------
 
+
 def test_local_fallback_no_division(local_only_audit, audit_path):
     """Records are written to local JSONL even without Division."""
     aid = local_only_audit.record(
@@ -157,6 +167,7 @@ def test_local_fallback_no_division(local_only_audit, audit_path):
 
 def test_local_fallback_division_fails(sealer_audit, audit_log):
     """When Division remember raises, local log still works."""
+
     def broken_remember(**kwargs):
         raise ConnectionError("Division unavailable")
 
@@ -177,6 +188,7 @@ def test_local_fallback_division_fails(sealer_audit, audit_log):
 # ---------------------------------------------------------------------------
 # Query local
 # ---------------------------------------------------------------------------
+
 
 def test_query_local_filter_result(sealer_audit):
     """query_local can filter by result type."""
@@ -219,6 +231,7 @@ def test_query_local_filter_since(sealer_audit):
 # ---------------------------------------------------------------------------
 # record_from_result convenience
 # ---------------------------------------------------------------------------
+
 
 def test_record_from_result(sealer_audit, keypair, mock_remember):
     """record_from_result extracts envelope hash and result from VPEResult."""
@@ -273,6 +286,7 @@ def test_record_from_result_invalid(sealer_audit, keypair, mock_remember):
 # ---------------------------------------------------------------------------
 # DivisionVPESigner integration
 # ---------------------------------------------------------------------------
+
 
 def test_signer_with_audit(keypair, audit_log, mock_remember):
     """DivisionVPESigner records audit entries when set_audit is called."""
@@ -342,6 +356,7 @@ def test_signer_verify_with_audit(keypair, audit_log, mock_remember):
 # Division roundtrip (with real MCP tools when available)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.skipif(
     not os.environ.get("HERMES_DIVISION_AVAILABLE"),
     reason="Division MCP not available in test environment",
@@ -383,8 +398,6 @@ def test_real_division_roundtrip():
 
     assert len(results) >= 1
     matching = [
-        r for r in results
-        if isinstance(r.get("episode_content"), dict)
-        and r["episode_content"].get("audit_id") == aid
+        r for r in results if isinstance(r.get("episode_content"), dict) and r["episode_content"].get("audit_id") == aid
     ]
     assert len(matching) >= 1, f"audit_id={aid} not found in Division search results"

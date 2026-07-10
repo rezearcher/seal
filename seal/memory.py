@@ -191,15 +191,19 @@ def verify_on_recall(
             nonce_store=nonce_store,
         )
         if result["valid"]:
-            accepted.append({
-                "content": result["content"],
-                "writer": result["writer"],
-                "namespace": result["namespace"],
-            })
+            accepted.append(
+                {
+                    "content": result["content"],
+                    "writer": result["writer"],
+                    "namespace": result["namespace"],
+                }
+            )
         else:
-            rejected.append({
-                "reason": result["reason"],
-                "record_index": idx,
-            })
+            rejected.append(
+                {
+                    "reason": result["reason"],
+                    "record_index": idx,
+                }
+            )
 
     return {"accepted": accepted, "rejected": rejected}

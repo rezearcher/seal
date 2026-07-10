@@ -77,8 +77,7 @@ class TestVerifyTimeConstraints:
         keys = generate_key_pair()
         env = vpe_sign("test", private_key=keys["private_key"])
         now = int(time.time())
-        result = vpe_verify(env, public_key=keys["public_key"],
-                            not_before=now - 100, not_after=now + 3600)
+        result = vpe_verify(env, public_key=keys["public_key"], not_before=now - 100, not_after=now + 3600)
         assert result["valid"] is True
 
     def test_no_time_constraints_still_works(self):

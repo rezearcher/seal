@@ -11,9 +11,7 @@ from seal.credential_store import CredentialStore
 
 @pytest.fixture
 def broker(tmp_path):
-    store = CredentialStore(
-        str(tmp_path / "creds.enc"), encryption_key=Fernet.generate_key()
-    )
+    store = CredentialStore(str(tmp_path / "creds.enc"), encryption_key=Fernet.generate_key())
     store.set("api_key", "REAL_SECRET_123")
     store.set("token", "tok-abc")
     return SecretsBroker(store)

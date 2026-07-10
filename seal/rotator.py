@@ -16,12 +16,9 @@ from seal.key_manager import KeyManager
 
 def main():
     parser = argparse.ArgumentParser(description="Seal key rotation daemon")
-    parser.add_argument("--once", action="store_true",
-                        help="check once and exit (cron mode)")
-    parser.add_argument("--days-before", type=int, default=30,
-                        help="rotate N days before expiry (default: 30)")
-    parser.add_argument("--interval", type=int, default=3600,
-                        help="seconds between checks (default: 3600)")
+    parser.add_argument("--once", action="store_true", help="check once and exit (cron mode)")
+    parser.add_argument("--days-before", type=int, default=30, help="rotate N days before expiry (default: 30)")
+    parser.add_argument("--interval", type=int, default=3600, help="seconds between checks (default: 3600)")
     parser.add_argument("--db", help="path to key database (default: ~/.seal/keys.db)")
     args = parser.parse_args()
 

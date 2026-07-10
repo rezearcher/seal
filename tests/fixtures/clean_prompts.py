@@ -32,8 +32,7 @@ CLEAN_PROMPTS: list[str] = [
     "Here are the meeting notes: please extract the action items.",
     "Can you proofread my essay and fix grammar and punctuation?",
     "What's a good delimiter to separate fields in a CSV export?",
-    "I need to send a message to my team about the schedule change — "
-    "can you help me phrase it?",
+    "I need to send a message to my team about the schedule change — can you help me phrase it?",
     "Explain prompt injection as a security concept for a blog post intro.",
     "Format the output as a numbered list of steps.",
 ]

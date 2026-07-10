@@ -422,6 +422,8 @@ for v in vectors:
     expected = v["expected_verify"]
     status = "PASS" if result["valid"] == expected else "FAIL"
     if status == "FAIL":
-        print(f"  [{status}] {v['id']}: expected valid={expected}, got valid={result['valid']} reason={result['reason']}")  # noqa: E501
+        print(
+            f"  [{status}] {v['id']}: expected valid={expected}, got valid={result['valid']} reason={result['reason']}"
+        )  # noqa: E501
     else:
         print(f"  [{status}] {v['id']}")

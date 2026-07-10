@@ -320,8 +320,7 @@ def cmd_verify(args) -> int:
         if sig_algorithm == SIG_ALG_ED25519:
             result = vpe_verify(envelope_str, public_key=public_key)
         else:
-            result = vpe_verify_hardware(envelope_str, public_key=public_key,
-                                         sig_algorithm=sig_algorithm)
+            result = vpe_verify_hardware(envelope_str, public_key=public_key, sig_algorithm=sig_algorithm)
 
     json_output = getattr(args, "json_output", True)
     if json_output:
@@ -459,6 +458,7 @@ def cmd_quickstart(args) -> int:  # noqa: ARG001
         # 4. Tamper and re-verify — should be rejected
         print("[4] Tampering with envelope and re-verifying...")
         import json as _json
+
         env_dict = _json.loads(envelope)
         env_dict["prompt"] = "TAMPERED PROMPT"
         tampered = _json.dumps(env_dict)
@@ -693,11 +693,13 @@ def build_parser() -> argparse.ArgumentParser:
         description="Seal \u2014 Verified Prompt Envelope Protocol & AI Agent Security.",
     )
     parser.add_argument(
-        "--store", default=str(DEFAULT_STORE_PATH),
+        "--store",
+        default=str(DEFAULT_STORE_PATH),
         help=f"path to the encrypted credential store (default: {DEFAULT_STORE_PATH})",
     )
     parser.add_argument(
-        "--audit", default=str(DEFAULT_AUDIT_PATH),
+        "--audit",
+        default=str(DEFAULT_AUDIT_PATH),
         help=f"path to the audit log (default: {DEFAULT_AUDIT_PATH})",
     )
 
@@ -706,7 +708,8 @@ def build_parser() -> argparse.ArgumentParser:
     # --- genkey ---
     p_genkey = sub.add_parser("genkey", help="generate Ed25519 key pair")
     p_genkey.add_argument(
-        "--out", metavar="PATH",
+        "--out",
+        metavar="PATH",
         help="write raw private key bytes to PATH and public key to PATH.pub",
     )
 
@@ -722,32 +725,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_sign.add_argument("--ttl", type=int, default=300, help="TTL in seconds (default: 300)")
     p_sign.add_argument("--nonce", help="explicit nonce")
     p_sign.add_argument("--counter", type=int, help="monotonic counter value")
-    p_sign.add_argument("--hardware", choices=["yubikey", "tpm", "enclave"],
-                        help="use hardware-backed key")
+    p_sign.add_argument("--hardware", choices=["yubikey", "tpm", "enclave"], help="use hardware-backed key")
     p_sign.add_argument("--multi", action="store_true", help="use multi-signature envelope")
-    p_sign.add_argument("--threshold", type=int, default=None,
-                        help="N-of-M threshold for multi-sig (default: 1)")
-    p_sign.add_argument("--key-id", default="default",
-                        help="signer key identifier")
-    p_sign.add_argument("--additional-sig",
-                        help="path to existing multi-sig envelope to append signature to")
+    p_sign.add_argument("--threshold", type=int, default=None, help="N-of-M threshold for multi-sig (default: 1)")
+    p_sign.add_argument("--key-id", default="default", help="signer key identifier")
+    p_sign.add_argument("--additional-sig", help="path to existing multi-sig envelope to append signature to")
 
     # --- verify ---
     p_verify = sub.add_parser("verify", help="verify a VPE envelope from stdin")
     p_verify.add_argument("--public-key", help="path to public key file")
-    p_verify.add_argument("--sig-algorithm", default=SIG_ALG_ED25519,
-                          choices=[SIG_ALG_ED25519, SIG_ALG_ECDSA_P256],
-                          help="signature algorithm (default: ed25519)")
+    p_verify.add_argument(
+        "--sig-algorithm",
+        default=SIG_ALG_ED25519,
+        choices=[SIG_ALG_ED25519, SIG_ALG_ECDSA_P256],
+        help="signature algorithm (default: ed25519)",
+    )
     p_verify.add_argument("--multi", action="store_true", help="use multi-sig verification")
-    p_verify.add_argument("--public-keys",
-                          help="path to JSON file mapping key_id->hex_public_key")
+    p_verify.add_argument("--public-keys", help="path to JSON file mapping key_id->hex_public_key")
 
     # --- key ---
     p_key = sub.add_parser("key", help="manage signing keys")
     key_sub = p_key.add_subparsers(dest="key_command", required=True)
     p_key_list = key_sub.add_parser("list", help="list all managed keys")
-    p_key_list.add_argument("--status", choices=["active", "retired", "revoked"],
-                            help="filter by key status")
+    p_key_list.add_argument("--status", choices=["active", "retired", "revoked"], help="filter by key status")
     key_sub.add_parser("rotate", help="rotate the active signing key")
     p_key_revoke = key_sub.add_parser("revoke", help="revoke a key by ID")
     p_key_revoke.add_argument("kid", help="key ID to revoke")
@@ -777,27 +777,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     # --- audit ---
     p_audit = sub.add_parser("audit", help="query the verification audit log")
-    p_audit.add_argument("--tail", type=int, default=20,
-                         help="number of recent entries (default: 20)")
-    p_audit.add_argument("--since",
-                         help="ISO timestamp filter (e.g. '2026-06-08T09:00:00')")
-    p_audit.add_argument("--status", choices=["valid", "invalid", "expired"],
-                         help="filter by verification result")
+    p_audit.add_argument("--tail", type=int, default=20, help="number of recent entries (default: 20)")
+    p_audit.add_argument("--since", help="ISO timestamp filter (e.g. '2026-06-08T09:00:00')")
+    p_audit.add_argument("--status", choices=["valid", "invalid", "expired"], help="filter by verification result")
     # --- disable ---
     sub.add_parser("disable", help="disable VPE middleware")
     # --- rollback ---
     p_rollback = sub.add_parser("rollback", help="remove VPE traces from Hermes config")
-    p_rollback.add_argument("--clean-keys", action="store_true",
-                            help="also remove VPE key files")
+    p_rollback.add_argument("--clean-keys", action="store_true", help="also remove VPE key files")
     # --- status ---
     sub.add_parser("status", help="show current VPE integration status")
 
     # --- epd ---
     p_epd = sub.add_parser("epd", help="scan text for prompt injection (EPD)")
-    p_epd.add_argument("--text", metavar="TEXT",
-                       help="text to scan (omit to read from stdin)")
-    p_epd.add_argument("--llm", action="store_true",
-                       help="enable LLM tiebreaker (requires Ollama; default: regex-only)")
+    p_epd.add_argument("--text", metavar="TEXT", help="text to scan (omit to read from stdin)")
+    p_epd.add_argument(
+        "--llm", action="store_true", help="enable LLM tiebreaker (requires Ollama; default: regex-only)"
+    )
 
     # --- memory ---
     p_memory = sub.add_parser("memory", help="sign and verify memory records")
@@ -805,33 +801,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_mem_sign = mem_sub.add_parser("sign", help="sign a memory record")
     p_mem_sign.add_argument("--content", required=True, help="memory content to sign")
     p_mem_sign.add_argument("--writer", required=True, help="writer identity (issuer)")
-    p_mem_sign.add_argument("--namespace", default="default",
-                            help="memory namespace (default: default)")
-    p_mem_sign.add_argument("--private-key", dest="private_key",
-                            help="path to private key file")
-    p_mem_verify = mem_sub.add_parser("verify",
-                                      help="verify a memory record from stdin")
-    p_mem_verify.add_argument("--public-key", dest="public_key",
-                              help="path to public key file")
-    p_mem_verify.add_argument("--trusted-writers", dest="trusted_writers", nargs="+",
-                              metavar="WRITER",
-                              help="allowed writer identities (space-separated)")
-    p_mem_verify.add_argument("--namespace",
-                              help="expected namespace; rejects records that differ")
+    p_mem_sign.add_argument("--namespace", default="default", help="memory namespace (default: default)")
+    p_mem_sign.add_argument("--private-key", dest="private_key", help="path to private key file")
+    p_mem_verify = mem_sub.add_parser("verify", help="verify a memory record from stdin")
+    p_mem_verify.add_argument("--public-key", dest="public_key", help="path to public key file")
+    p_mem_verify.add_argument(
+        "--trusted-writers",
+        dest="trusted_writers",
+        nargs="+",
+        metavar="WRITER",
+        help="allowed writer identities (space-separated)",
+    )
+    p_mem_verify.add_argument("--namespace", help="expected namespace; rejects records that differ")
 
     # --- quickstart ---
     sub.add_parser("quickstart", help="run an end-to-end demo (throwaway keys, no side-effects)")
 
     # --- fuzz ---
     p_fuzz = sub.add_parser("fuzz", help="run EPD pattern mutation fuzzer benchmark")
-    p_fuzz.add_argument("--count", type=int, default=1000,
-                        help="minimum mutations to generate (default: 1000)")
-    p_fuzz.add_argument("--seed", type=int, default=42,
-                        help="random seed (default: 42)")
-    p_fuzz.add_argument("--evasions", type=int, default=20,
-                        help="evasion examples to show (default: 20)")
-    p_fuzz.add_argument("--json", action="store_true",
-                        help="output raw JSON")
+    p_fuzz.add_argument("--count", type=int, default=1000, help="minimum mutations to generate (default: 1000)")
+    p_fuzz.add_argument("--seed", type=int, default=42, help="random seed (default: 42)")
+    p_fuzz.add_argument("--evasions", type=int, default=20, help="evasion examples to show (default: 20)")
+    p_fuzz.add_argument("--json", action="store_true", help="output raw JSON")
 
     return parser
 
@@ -894,10 +885,14 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_quickstart(args)
     elif args.command == "fuzz":
         from seal.epd.fuzzer import main as fuzz_main
+
         fuzz_argv = [
-            "--count", str(args.count),
-            "--seed", str(args.seed),
-            "--evasions", str(args.evasions),
+            "--count",
+            str(args.count),
+            "--seed",
+            str(args.seed),
+            "--evasions",
+            str(args.evasions),
         ]
         if args.json:
             fuzz_argv.append("--json")

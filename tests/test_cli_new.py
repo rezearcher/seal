@@ -17,6 +17,7 @@ from seal.core import generate_key_pair
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _run(argv: list[str]) -> int:
     """Run the CLI and return the exit code."""
     return main(argv)
@@ -43,10 +44,16 @@ class TestParserRegistration:
 
     def test_memory_sign_registered(self):
         parser = build_parser()
-        args = parser.parse_args([
-            "memory", "sign",
-            "--content", "hello", "--writer", "agent:x",
-        ])
+        args = parser.parse_args(
+            [
+                "memory",
+                "sign",
+                "--content",
+                "hello",
+                "--writer",
+                "agent:x",
+            ]
+        )
         assert args.command == "memory"
         assert args.memory_command == "sign"
 
@@ -132,13 +139,21 @@ class TestMemoryCommand:
         (tmp_path / "seal_public.key").write_bytes(self.keys["public_key"])
 
     def test_sign_produces_vpe_envelope(self, capsys):
-        code, out, err = _run_capture([
-            "memory", "sign",
-            "--content", "User prefers concise answers.",
-            "--writer", "agent:assistant",
-            "--namespace", "user-prefs",
-            "--private-key", str(self.priv_path),
-        ], capsys)
+        code, out, err = _run_capture(
+            [
+                "memory",
+                "sign",
+                "--content",
+                "User prefers concise answers.",
+                "--writer",
+                "agent:assistant",
+                "--namespace",
+                "user-prefs",
+                "--private-key",
+                str(self.priv_path),
+            ],
+            capsys,
+        )
         assert code == 0, f"stderr: {err}"
         envelope = json.loads(out.strip())
         assert envelope.get("vpe_version") == "1.0"
@@ -146,66 +161,106 @@ class TestMemoryCommand:
         assert envelope.get("audience") == "user-prefs"
 
     def test_roundtrip_valid(self, capsys, monkeypatch):
-        code, out, _ = _run_capture([
-            "memory", "sign",
-            "--content", "Concise please.",
-            "--writer", "agent:assistant",
-            "--namespace", "ns1",
-            "--private-key", str(self.priv_path),
-        ], capsys)
+        code, out, _ = _run_capture(
+            [
+                "memory",
+                "sign",
+                "--content",
+                "Concise please.",
+                "--writer",
+                "agent:assistant",
+                "--namespace",
+                "ns1",
+                "--private-key",
+                str(self.priv_path),
+            ],
+            capsys,
+        )
         assert code == 0
         record = out.strip()
 
         monkeypatch.setattr("sys.stdin", io.StringIO(record))
-        code2, out2, _ = _run_capture([
-            "memory", "verify",
-            "--public-key", str(self.pub_path),
-            "--trusted-writers", "agent:assistant",
-            "--namespace", "ns1",
-        ], capsys)
+        code2, out2, _ = _run_capture(
+            [
+                "memory",
+                "verify",
+                "--public-key",
+                str(self.pub_path),
+                "--trusted-writers",
+                "agent:assistant",
+                "--namespace",
+                "ns1",
+            ],
+            capsys,
+        )
         result = json.loads(out2.strip())
         assert code2 == 0
         assert result["valid"] is True
         assert result["content"] == "Concise please."
 
     def test_tampered_rejected(self, capsys, monkeypatch):
-        code, out, _ = _run_capture([
-            "memory", "sign",
-            "--content", "original content",
-            "--writer", "agent:x",
-            "--private-key", str(self.priv_path),
-        ], capsys)
+        code, out, _ = _run_capture(
+            [
+                "memory",
+                "sign",
+                "--content",
+                "original content",
+                "--writer",
+                "agent:x",
+                "--private-key",
+                str(self.priv_path),
+            ],
+            capsys,
+        )
         assert code == 0
         record_dict = json.loads(out.strip())
         record_dict["prompt"] = "INJECTED"
         tampered = json.dumps(record_dict)
 
         monkeypatch.setattr("sys.stdin", io.StringIO(tampered))
-        code2, out2, _ = _run_capture([
-            "memory", "verify",
-            "--public-key", str(self.pub_path),
-        ], capsys)
+        code2, out2, _ = _run_capture(
+            [
+                "memory",
+                "verify",
+                "--public-key",
+                str(self.pub_path),
+            ],
+            capsys,
+        )
         result = json.loads(out2.strip())
         assert code2 == 1
         assert result["valid"] is False
         assert result["reason"] == "signature_mismatch"
 
     def test_untrusted_writer_rejected(self, capsys, monkeypatch):
-        code, out, _ = _run_capture([
-            "memory", "sign",
-            "--content", "some content",
-            "--writer", "agent:untrusted",
-            "--private-key", str(self.priv_path),
-        ], capsys)
+        code, out, _ = _run_capture(
+            [
+                "memory",
+                "sign",
+                "--content",
+                "some content",
+                "--writer",
+                "agent:untrusted",
+                "--private-key",
+                str(self.priv_path),
+            ],
+            capsys,
+        )
         assert code == 0
         record = out.strip()
 
         monkeypatch.setattr("sys.stdin", io.StringIO(record))
-        code2, out2, _ = _run_capture([
-            "memory", "verify",
-            "--public-key", str(self.pub_path),
-            "--trusted-writers", "agent:trusted-only",
-        ], capsys)
+        code2, out2, _ = _run_capture(
+            [
+                "memory",
+                "verify",
+                "--public-key",
+                str(self.pub_path),
+                "--trusted-writers",
+                "agent:trusted-only",
+            ],
+            capsys,
+        )
         result = json.loads(out2.strip())
         assert code2 == 1
         assert result["reason"] == "untrusted_writer"

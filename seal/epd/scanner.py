@@ -31,6 +31,7 @@ from seal.epd.patterns import iter_patterns
 # to a hidden instruction). Category Cf, so the predicate below strips them.
 _TAG_LO, _TAG_HI = 0xE0000, 0xE007F
 
+
 # Variation selectors: VS1–16 (U+FE00–FE0F) + supplement (U+E0100–E01EF).
 # Category Mn with combining class 0, so NFKD/combining-mark stripping leaves
 # them intact — they need explicit handling. A *single* selector (e.g. U+FE0F
@@ -49,9 +50,9 @@ def _is_private_use(cp: int) -> bool:
     only runs are flagged (see ``_PUA_RUN_THRESHOLD``).
     """
     return (
-        0xE000 <= cp <= 0xF8FF          # BMP PUA
-        or 0xF0000 <= cp <= 0xFFFFD     # Supplementary PUA-A
-        or 0x100000 <= cp <= 0x10FFFD   # Supplementary PUA-B
+        0xE000 <= cp <= 0xF8FF  # BMP PUA
+        or 0xF0000 <= cp <= 0xFFFFD  # Supplementary PUA-A
+        or 0x100000 <= cp <= 0x10FFFD  # Supplementary PUA-B
     )
 
 
@@ -82,9 +83,26 @@ _PUA_RUN_THRESHOLD = 4
 # normalization pass. NFKD handles fullwidth and many compatibility forms;
 # this table covers look-alikes NFKD leaves untouched.
 _HOMOGLYPHS = {
-    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y",
-    "ѕ": "s", "і": "i", "ј": "j", "ԁ": "d", "һ": "h", "ո": "n", "ɡ": "g",
-    "α": "a", "ο": "o", "ρ": "p", "ε": "e", "ν": "v", "τ": "t",
+    "а": "a",
+    "е": "e",
+    "о": "o",
+    "р": "p",
+    "с": "c",
+    "х": "x",
+    "у": "y",
+    "ѕ": "s",
+    "і": "i",
+    "ј": "j",
+    "ԁ": "d",
+    "һ": "h",
+    "ո": "n",
+    "ɡ": "g",
+    "α": "a",
+    "ο": "o",
+    "ρ": "p",
+    "ε": "e",
+    "ν": "v",
+    "τ": "t",
 }
 
 # Leet-speak / ASCII substitution map (number/punctuation -> letter).
@@ -372,6 +390,7 @@ class EPDScanner:
         if self.config.normalize_obfuscation:
             norm, index_map = _normalize_with_map(prompt)
             if norm and norm != prompt:
+
                 def mapper(s: int, e: int) -> tuple[int, int]:
                     raw_s = index_map[s]
                     raw_e = index_map[e - 1] + 1

@@ -38,9 +38,7 @@ def tmp_nonce_store(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _sign(
-    content, keys, *, writer="agent:writer", namespace="ns:default", nonce=None, ttl=0, scope=None
-):
+def _sign(content, keys, *, writer="agent:writer", namespace="ns:default", nonce=None, ttl=0, scope=None):
     return sign_memory(
         content,
         writer=writer,
@@ -268,10 +266,7 @@ def test_verify_on_recall_mixed(trusted_keys, attacker_keys):
 
 
 def test_verify_on_recall_all_accepted(trusted_keys):
-    records = [
-        _sign(f"record {i}", trusted_keys, writer="agent:w", namespace="ns:x")
-        for i in range(4)
-    ]
+    records = [_sign(f"record {i}", trusted_keys, writer="agent:w", namespace="ns:x") for i in range(4)]
     result = verify_on_recall(records, public_key=trusted_keys["public_key"])
     assert len(result["accepted"]) == 4
     assert result["rejected"] == []

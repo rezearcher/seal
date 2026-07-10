@@ -2,6 +2,7 @@
 
 Uses SoftwareSimProvider for testing without actual hardware.
 """
+
 import hashlib
 import json
 
@@ -123,6 +124,7 @@ class TestHsmManager:
 def sample_prompt():
     return "execute: verify transaction 0xabcd"
 
+
 SCOPE = {"allowed_tools": ["search"], "max_tokens": 1000}
 
 
@@ -147,7 +149,8 @@ class TestHardwareSignVerify:
 
     def test_sign_hardware_explicit_provider(self, sample_prompt):
         envelope = vpe_sign_hardware(
-            sample_prompt, scope=SCOPE,
+            sample_prompt,
+            scope=SCOPE,
             issuer="test:explicit",
             provider_name="software-sim",
         )
@@ -161,7 +164,8 @@ class TestHardwareSignVerify:
     def test_sign_verify_round_trip_ed25519(self, sample_prompt):
         """Sign with hardware, verify via vpe_verify_hardware."""
         _ = vpe_sign_hardware(
-            sample_prompt, scope=SCOPE,
+            sample_prompt,
+            scope=SCOPE,
             issuer="test:roundtrip",
             provider_name="software-sim",
         )
@@ -286,6 +290,7 @@ class TestProviderDetection:
         """YubiKey can't be detected without actual hardware, just verify
         the detection function runs without error."""
         from seal.hardware import YubiKeyPIVProvider
+
         result = YubiKeyPIVProvider.detect()
         # Will be False since we don't have a YubiKey connected,
         # but shouldn't crash
@@ -293,11 +298,13 @@ class TestProviderDetection:
 
     def test_tpm_detect_on_linux(self):
         from seal.hardware import TPMProvider
+
         result = TPMProvider.detect()
         # May be False without TPM, shouldn't crash
         assert result is False or result is True
 
     def test_enclave_detect_on_linux(self):
         from seal.hardware import SecureEnclaveProvider
+
         result = SecureEnclaveProvider.detect()
         assert result is False  # Always False on Linux

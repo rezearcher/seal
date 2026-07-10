@@ -471,15 +471,8 @@ def cmd_status() -> RollbackReport:
         active = km.get_active_key()
         if active:
             fp = active["fingerprint"]
-            expires = (
-                time.strftime("%Y-%m-%d", time.gmtime(active["not_after"]))
-                if active["not_after"]
-                else "never"
-            )
-            report.op(
-                f"Active signing key: {active['kid']}  "
-                f"fingerprint={fp}  expires={expires}"
-            )
+            expires = time.strftime("%Y-%m-%d", time.gmtime(active["not_after"])) if active["not_after"] else "never"
+            report.op(f"Active signing key: {active['kid']}  fingerprint={fp}  expires={expires}")
         else:
             report.op("Active signing key: none (run 'seal genkey' to create one)")
     except Exception as e:

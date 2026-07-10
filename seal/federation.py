@@ -35,7 +35,7 @@ _BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 _BASE58_LOOKUP = {c: i for i, c in enumerate(_BASE58_ALPHABET)}
 
 # Ed25519 multicodec prefix (varint-encoded as a single byte)
-_ED25519_MULTICODEC_PREFIX = bytes([0xed])
+_ED25519_MULTICODEC_PREFIX = bytes([0xED])
 
 # DNS prefix for VPE key discovery
 _VPE_DNS_PREFIX = "_vpe."
@@ -44,6 +44,7 @@ _VPE_DNS_PREFIX = "_vpe."
 # ---------------------------------------------------------------------------
 # Base58BTC decode (stdlib-only, no dependencies)
 # ---------------------------------------------------------------------------
+
 
 def _base58btc_decode(s: str) -> bytes:
     """Decode a base58btc (Bitcoin-style) string to bytes.
@@ -93,6 +94,7 @@ def _base58btc_decode(s: str) -> bytes:
 # Trust anchor registry
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TrustAnchorRegistry:
     """File-based registry of pre-shared Ed25519 public keys.
@@ -135,9 +137,7 @@ class TrustAnchorRegistry:
         resolved = Path(self.path).expanduser()
         resolved.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
-            resolved.write_text(
-                json.dumps(self._anchors, indent=2, sort_keys=True) + "\n"
-            )
+            resolved.write_text(json.dumps(self._anchors, indent=2, sort_keys=True) + "\n")
             resolved.chmod(0o600)
 
     def lookup(self, agent_id: str) -> bytes | None:
@@ -203,6 +203,7 @@ class TrustAnchorRegistry:
 # ---------------------------------------------------------------------------
 # DNS-based trust anchor discovery (stdlib-only)
 # ---------------------------------------------------------------------------
+
 
 def _resolve_dns_txt(domain: str) -> list[str]:
     """Query TXT records for a domain using system tools.
@@ -291,6 +292,7 @@ def resolve_via_dns(agent_domain: str) -> bytes | None:
 # DID-based trust anchor discovery (did:key)
 # ---------------------------------------------------------------------------
 
+
 def _decode_did_key(did_str: str) -> bytes | None:
     """Decode an Ed25519 public key from a ``did:key`` URI.
 
@@ -311,7 +313,7 @@ def _decode_did_key(did_str: str) -> bytes | None:
     if not did_str.startswith("did:key:"):
         return None
 
-    encoded = did_str[len("did:key:"):]
+    encoded = did_str[len("did:key:") :]
     if not encoded:
         return None
 
@@ -356,6 +358,7 @@ def resolve_via_did(did_str: str) -> bytes | None:
 # ---------------------------------------------------------------------------
 # Cross-agent audit trail
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class FederationAuditLog:
@@ -464,6 +467,7 @@ class FederationAuditLog:
 # Resolution chain
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ResolutionResult:
     """Result of resolving a trust anchor.
@@ -473,6 +477,7 @@ class ResolutionResult:
         source: How it was resolved (``"registry"``, ``"dns"``, ``"did"``, ``"none"``).
         agent_id: The resolved agent identity, if known.
     """
+
     public_key: bytes | None
     source: str = "none"
     agent_id: str = ""
@@ -527,9 +532,11 @@ def resolve_trust_anchor(
 # Federated sign / verify
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FederatedSignResult:
     """Result of a federated signing operation."""
+
     envelope: str = ""
     nonce: str = ""
     error: str = ""
@@ -584,6 +591,7 @@ def vpe_federated_sign(
 
     # Extract nonce for audit correlation
     import json as _json
+
     try:
         parsed = _json.loads(envelope_str)
         nonce = parsed.get("nonce", "")
@@ -634,13 +642,17 @@ def vpe_federated_verify(
     # Parse envelope to get issuer
     try:
         import json as _json
+
         envelope = _json.loads(envelope_str)
     except (ValueError, _json.JSONDecodeError) as exc:
         result = {"valid": False, "reason": f"invalid_json: {exc}"}
         if audit_log is not None:
             audit_log.log_verification(
-                issuer="unknown", verifier="unknown",
-                envelope_nonce="", result="denied", reason=result["reason"],
+                issuer="unknown",
+                verifier="unknown",
+                envelope_nonce="",
+                result="denied",
+                reason=result["reason"],
             )
         return {**result, "source": "none"}
 
@@ -648,8 +660,11 @@ def vpe_federated_verify(
         result = {"valid": False, "reason": "invalid_json: not a dict"}
         if audit_log is not None:
             audit_log.log_verification(
-                issuer="unknown", verifier="unknown",
-                envelope_nonce="", result="denied", reason=result["reason"],
+                issuer="unknown",
+                verifier="unknown",
+                envelope_nonce="",
+                result="denied",
+                reason=result["reason"],
             )
         return {**result, "source": "none"}
 
@@ -668,9 +683,12 @@ def vpe_federated_verify(
         reason = f"unknown_issuer: no trust anchor for {issuer!r}"
         if audit_log is not None:
             audit_log.log_verification(
-                issuer=issuer, verifier="federation",
-                envelope_nonce=nonce, result="denied",
-                reason=reason, source="none",
+                issuer=issuer,
+                verifier="federation",
+                envelope_nonce=nonce,
+                result="denied",
+                reason=reason,
+                source="none",
             )
         return {"valid": False, "reason": reason, "source": "none"}
 

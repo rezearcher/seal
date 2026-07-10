@@ -95,10 +95,12 @@ def _ensure_nacl() -> bool:
     """
     try:
         import nacl.bindings  # noqa: F401
+
         return True
     except ImportError:
         try:
             from cryptography.hazmat.primitives.asymmetric import ed25519  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -118,6 +120,7 @@ def generate_keypair() -> tuple[bytes, bytes]:
     """
     try:
         import nacl.bindings
+
         # nacl returns (pk_32, sk_64) where sk_64 = seed_32 || pk_32
         pk, sk_full = nacl.bindings.crypto_sign_keypair()
         sk = sk_full[:32]  # store only the 32-byte seed
@@ -130,6 +133,7 @@ def generate_keypair() -> tuple[bytes, bytes]:
             PrivateFormat,
             PublicFormat,
         )
+
         private_key = ed25519.Ed25519PrivateKey.generate()
         public_key = private_key.public_key()
         sk = private_key.private_bytes(
@@ -156,12 +160,14 @@ def _sign_bytes(data: bytes, private_key: bytes) -> bytes:
     """
     try:
         import nacl.bindings
+
         # nacl needs the full 64-byte secret key (seed || pk), so
         # derive it from the 32-byte seed
         pk_from_seed, sk_full = nacl.bindings.crypto_sign_seed_keypair(private_key)
         return nacl.bindings.crypto_sign(data, sk_full)[:64]
     except ImportError:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
         key = Ed25519PrivateKey.from_private_bytes(private_key)
         return key.sign(data)
 
@@ -180,6 +186,7 @@ def _verify_bytes(data: bytes, signature: bytes, public_key: bytes) -> bool:
     try:
         import nacl.bindings
         import nacl.exceptions
+
         try:
             nacl.bindings.crypto_sign_open(signature + data, public_key)
             return True
@@ -188,6 +195,7 @@ def _verify_bytes(data: bytes, signature: bytes, public_key: bytes) -> bool:
     except ImportError:
         from cryptography.exceptions import InvalidSignature
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
         try:
             key = Ed25519PublicKey.from_public_bytes(public_key)
             key.verify(signature, data)
@@ -272,8 +280,7 @@ def vpe_sign(
     """
     if not _nacl_sign_available():
         raise RuntimeError(
-            "Ed25519 signing requires the 'nacl' (PyNaCl) or 'cryptography' library. "
-            "Install with: pip install pynacl"
+            "Ed25519 signing requires the 'nacl' (PyNaCl) or 'cryptography' library. Install with: pip install pynacl"
         )
 
     if not prompt:

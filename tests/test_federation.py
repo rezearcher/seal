@@ -26,6 +26,7 @@ from seal.audit import AuditLog
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def alice_keys():
     return generate_key_pair()
@@ -62,6 +63,7 @@ def populated_registry(tmp_registry, alice_keys, bob_keys):
 # ---------------------------------------------------------------------------
 # Trust anchor registry
 # ---------------------------------------------------------------------------
+
 
 class TestTrustAnchorRegistry:
     def test_empty_registry(self, tmp_registry):
@@ -116,6 +118,7 @@ class TestTrustAnchorRegistry:
 # DID key resolution
 # ---------------------------------------------------------------------------
 
+
 class TestDIDResolution:
     def test_invalid_prefix(self):
         assert resolve_via_did("not-a-did") is None
@@ -136,7 +139,7 @@ class TestDIDResolution:
         pk = keys["public_key"]
 
         # Build did:key manually: multicodec(0xed) + raw public key -> base58btc
-        payload = bytes([0xed]) + pk
+        payload = bytes([0xED]) + pk
 
         # Encode to base58btc
         encoded = _base58btc_encode(payload)
@@ -192,6 +195,7 @@ def _base58btc_encode(data: bytes) -> str:
 # Trust anchor resolution chain
 # ---------------------------------------------------------------------------
 
+
 class TestResolutionChain:
     def test_registry_first(self, populated_registry, alice_keys):
         result = resolve_trust_anchor("agent:alice", registry=populated_registry)
@@ -210,7 +214,7 @@ class TestResolutionChain:
 
     def test_did_fallback(self, alice_keys):
         """DID resolution works when registry fails."""
-        payload = bytes([0xed]) + alice_keys["public_key"]
+        payload = bytes([0xED]) + alice_keys["public_key"]
         did = f"did:key:z{_base58btc_encode(payload)}"
 
         result = resolve_trust_anchor("agent:alice", did_str=did)
@@ -221,6 +225,7 @@ class TestResolutionChain:
 # ---------------------------------------------------------------------------
 # Federated signing
 # ---------------------------------------------------------------------------
+
 
 class TestFederatedSign:
     def test_sign_returns_envelope(self, alice_keys):
@@ -261,6 +266,7 @@ class TestFederatedSign:
 # ---------------------------------------------------------------------------
 # Federated verification
 # ---------------------------------------------------------------------------
+
 
 class TestFederatedVerify:
     def test_verify_from_registry(self, populated_registry, alice_keys, bob_keys):
@@ -322,7 +328,7 @@ class TestFederatedVerify:
         )
 
         # Resolve via DID
-        payload = bytes([0xed]) + alice_keys["public_key"]
+        payload = bytes([0xED]) + alice_keys["public_key"]
         did = f"did:key:z{_base58btc_encode(payload)}"
 
         result = vpe_federated_verify(
@@ -381,6 +387,7 @@ class TestFederatedVerify:
 # ---------------------------------------------------------------------------
 # Cross-agent audit trail
 # ---------------------------------------------------------------------------
+
 
 class TestFederationAuditLog:
     def test_log_issuance(self, tmp_registry):
@@ -452,14 +459,10 @@ class TestFederationAuditLog:
         # Check both issuance and verification appear in audit
         entries = audit.audit.query()
         issuance_events = [
-            e for e in entries
-            if e.get("event") == "vpe_cross_audit"
-            and e.get("event_type") == "issuance"
+            e for e in entries if e.get("event") == "vpe_cross_audit" and e.get("event_type") == "issuance"
         ]
         verification_events = [
-            e for e in entries
-            if e.get("event") == "vpe_cross_audit"
-            and e.get("event_type") == "verification"
+            e for e in entries if e.get("event") == "vpe_cross_audit" and e.get("event_type") == "verification"
         ]
         assert len(issuance_events) >= 1
         assert len(verification_events) >= 1
@@ -470,6 +473,7 @@ class TestFederationAuditLog:
 # ---------------------------------------------------------------------------
 # DNS resolution (unit-testable parts)
 # ---------------------------------------------------------------------------
+
 
 class TestDNSResolutionParsing:
     def test_resolve_via_dns_invalid_domain(self):

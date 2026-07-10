@@ -4,6 +4,7 @@ Verifies that a replayed nonce is rejected even when verify_stored_value is
 called on a fresh DivisionVPESigner instance that shares the same NonceStore
 db_path — simulating a process restart.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -56,19 +57,13 @@ def test_replay_rejected_across_restarts(keypair_dir, nonce_db):
     # First verification on a fresh instance — should pass
     signer_b = _make_signer(keypair_dir, nonce_db)
     result_first = signer_b.verify_stored_value(signed)
-    assert result_first.valid is True, (
-        f"First verification should succeed; got: {result_first.reason}"
-    )
+    assert result_first.valid is True, f"First verification should succeed; got: {result_first.reason}"
 
     # Second verification on another fresh instance — same nonce, must be rejected
     signer_c = _make_signer(keypair_dir, nonce_db)
     result_replay = signer_c.verify_stored_value(signed)
-    assert result_replay.valid is False, (
-        "Replayed nonce must be rejected across process-restart simulation"
-    )
-    assert "replay" in result_replay.reason.lower(), (
-        f"Reason should mention replay; got: {result_replay.reason}"
-    )
+    assert result_replay.valid is False, "Replayed nonce must be rejected across process-restart simulation"
+    assert "replay" in result_replay.reason.lower(), f"Reason should mention replay; got: {result_replay.reason}"
 
 
 def test_different_values_not_affected(keypair_dir, nonce_db):

@@ -102,7 +102,7 @@ class AuditLog:
 
         # Count-based pruning.
         if len(kept) > self.max_entries:
-            kept = kept[-self.max_entries:]
+            kept = kept[-self.max_entries :]
 
         if len(kept) == original_len:
             return
@@ -132,9 +132,7 @@ class AuditLog:
             }
         )
 
-    def log_denial(
-        self, label: str, caller: str, reason: str = "label_not_found"
-    ) -> None:
+    def log_denial(self, label: str, caller: str, reason: str = "label_not_found") -> None:
         """Record a denied credential access."""
         self._append(
             {

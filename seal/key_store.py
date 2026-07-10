@@ -222,8 +222,7 @@ class KeyStore:
                (key_id, label, public_key, private_key, not_before, not_after,
                 status, rotation_days, created_at)
                VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)""",
-            (key_id, label, pub_bytes, priv_bytes, not_before, not_after,
-             rotation_days, now),
+            (key_id, label, pub_bytes, priv_bytes, not_before, not_after, rotation_days, now),
         )
         conn.commit()
 
@@ -241,19 +240,21 @@ class KeyStore:
 
     def get_key(self, key_id: str) -> KeyInfo | None:
         """Look up a key by its unique ID."""
-        row = self._conn().execute(
-            "SELECT * FROM keys WHERE key_id = ?", (key_id,)
-        ).fetchone()
+        row = self._conn().execute("SELECT * FROM keys WHERE key_id = ?", (key_id,)).fetchone()
         if row is None:
             return None
         return self._row_to_info(row)
 
     def get_key_by_label(self, label: str) -> KeyInfo | None:
         """Get the most recently created key for a label (any status)."""
-        row = self._conn().execute(
-            "SELECT * FROM keys WHERE label = ? ORDER BY created_at DESC LIMIT 1",
-            (label,),
-        ).fetchone()
+        row = (
+            self._conn()
+            .execute(
+                "SELECT * FROM keys WHERE label = ? ORDER BY created_at DESC LIMIT 1",
+                (label,),
+            )
+            .fetchone()
+        )
         if row is None:
             return None
         return self._row_to_info(row)
@@ -357,22 +358,24 @@ class KeyStore:
         """Return all active/expiring keys whose not_after is within
         their rotation_days window (or already past it)."""
         now = now or int(time.time())
-        rows = self._conn().execute(
-            """SELECT * FROM keys
+        rows = (
+            self._conn()
+            .execute(
+                """SELECT * FROM keys
                WHERE status IN ('active', 'expiring')
                AND rotation_days > 0
                AND not_after > 0
                AND not_after <= ? + rotation_days * 86400
                ORDER BY not_after ASC""",
-            (now,),
-        ).fetchall()
+                (now,),
+            )
+            .fetchall()
+        )
         return [self._row_to_info(r) for r in rows]
 
     def delete_key(self, key_id: str) -> bool:
         """Permanently remove a key record. Use with caution."""
-        cursor = self._conn().execute(
-            "DELETE FROM keys WHERE key_id = ?", (key_id,)
-        )
+        cursor = self._conn().execute("DELETE FROM keys WHERE key_id = ?", (key_id,))
         self._conn().commit()
         return cursor.rowcount > 0
 

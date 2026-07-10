@@ -6,6 +6,7 @@ JSON) to the Fernet-encrypted ``seal.credential_store.CredentialStore``.
 Key behavioural difference: the encrypted store detects corruption eagerly at
 construction time (``Fernet.decrypt``), not lazily on the first read operation.
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,9 +44,7 @@ def test_corrupted_file_logs_warning(tmp_path, caplog):
 
     # Verify a warning was logged about corruption
     assert any(
-        "corrupt" in record.getMessage().lower()
-        and str(store_path) in record.getMessage()
-        for record in caplog.records
+        "corrupt" in record.getMessage().lower() and str(store_path) in record.getMessage() for record in caplog.records
     ), f"No corruption warning found in log records: {[r.getMessage() for r in caplog.records]}"
 
 
