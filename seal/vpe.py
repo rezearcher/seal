@@ -1,38 +1,27 @@
 """
-VPE Backward-Compatibility Shim — original dict-based API delegating to
-``seal.core`` (the consolidated single implementation).
+VPE Core — Verified Prompt Envelope Protocol.
 
-All new code should import directly from ``seal.core`` instead.
+Ed25519-signed prompt envelopes for cryptographic provenance verification
+of AI agent prompts. Uses dual-backend (nacl preferred, cryptography fallback).
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import secrets
 import time
 from typing import Any
 
-from seal.core import (
+from seal._base import (
     VPE_VERSION,
-    _sign_bytes,
-)
-from seal.core import (
-    _canonical_json as _core_canonical_json,
-)
-from seal.core import (
-    generate_key_pair as _core_generate_key_pair,
-)
-from seal.core import (
-    vpe_verify as _core_verify,
+    _canonical_json,
 )
 
 # ---------------------------------------------------------------------------
-# Constants
+# Protocol constants
 # ---------------------------------------------------------------------------
 
-VPEEnvelope = dict[str, Any]
 DEFAULT_TTL_SECONDS = 300
 SIGNED_FIELDS = [
     "vpe_version",
@@ -49,8 +38,10 @@ SIGNED_FIELDS = [
 ]
 
 # ---------------------------------------------------------------------------
-# VPEResult — result type for verification
+# Types
 # ---------------------------------------------------------------------------
+
+VPEEnvelope = dict[str, Any]
 
 
 class VPEResult:
@@ -70,40 +61,114 @@ class VPEResult:
         self.envelope = envelope
 
     def __repr__(self) -> str:
-        return f"<VPEResult {'VALID' if self.valid else 'INVALID'}: {self.reason}>"
+        status = "VALID" if self.valid else "INVALID"
+        return f"<VPEResult {status}: {self.reason}>"
 
     def __bool__(self) -> bool:
         return self.valid
 
 
 # ---------------------------------------------------------------------------
-# Legacy helpers (re-exported from core with backward-compat names)
+# Dual-backend crypto (nacl preferred, cryptography fallback)
 # ---------------------------------------------------------------------------
-
-
-def _ensure_nacl() -> bool:
-    return True
-
-
-def _nacl_sign_available() -> bool:
-    return True
-
 
 _KEY_CACHE: dict[str, tuple] = {}
 
 
+def _ensure_nacl() -> bool:
+    try:
+        import nacl.bindings  # noqa: F401
+
+        return True
+    except ImportError:
+        try:
+            from cryptography.hazmat.primitives.asymmetric import ed25519  # noqa: F401
+
+            return True
+        except ImportError:
+            return False
+
+
+def _nacl_sign_available() -> bool:
+    return _ensure_nacl()
+
+
 def generate_keypair() -> tuple[bytes, bytes]:
-    """Generate an Ed25519 keypair (backward-compat tuple API)."""
-    pair = _core_generate_key_pair()
-    return (pair["private_key"], pair["public_key"])
+    """Generate a new Ed25519 keypair (nacl/crypto dual-backend)."""
+    try:
+        import nacl.bindings
+
+        pk, sk_full = nacl.bindings.crypto_sign_keypair()
+        return (sk_full[:32], pk)
+    except ImportError:
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            NoEncryption,
+            PrivateFormat,
+            PublicFormat,
+        )
+
+        private_key = ed25519.Ed25519PrivateKey.generate()
+        public_key = private_key.public_key()
+        sk = private_key.private_bytes(
+            encoding=Encoding.Raw,
+            format=PrivateFormat.Raw,
+            encryption_algorithm=NoEncryption(),
+        )
+        pk = public_key.public_bytes(
+            encoding=Encoding.Raw,
+            format=PublicFormat.Raw,
+        )
+        return (sk, pk)
 
 
-def _canonical_json(obj: Any) -> bytes:
-    return _core_canonical_json(obj)
+def _sign_bytes(data: bytes, private_key: bytes) -> bytes:
+    """Sign data with Ed25519 (nacl preferred, crypto fallback)."""
+    try:
+        import nacl.bindings
+
+        pk_from_seed, sk_full = nacl.bindings.crypto_sign_seed_keypair(private_key)
+        return nacl.bindings.crypto_sign(data, sk_full)[:64]
+    except ImportError:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        return Ed25519PrivateKey.from_private_bytes(private_key).sign(data)
+
+
+def _verify_bytes(data: bytes, signature: bytes, public_key: bytes) -> bool:
+    """Verify an Ed25519 signature (nacl preferred, crypto fallback)."""
+    try:
+        import nacl.bindings
+        import nacl.exceptions
+
+        try:
+            nacl.bindings.crypto_sign_open(signature + data, public_key)
+            return True
+        except nacl.exceptions.BadSignatureError:
+            return False
+    except ImportError:
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+        try:
+            Ed25519PublicKey.from_public_bytes(public_key).verify(signature, data)
+            return True
+        except InvalidSignature:
+            return False
+
+
+# ---------------------------------------------------------------------------
+# Canonical serialisation (vpe.py flavour conforming to core.py's field order)
+# ---------------------------------------------------------------------------
 
 
 def _canonical_envelope(envelope: VPEEnvelope, skip_signature: bool = True) -> bytes:
-    """Serialize the signable portion of an envelope (SIGNED_FIELDS order)."""
+    """Serialize the signable portion of an envelope to bytes.
+
+    Only SIGNED_FIELDS are included, in the order they appear in the envelope,
+    matching core.py's canonical field order and scope sorting.
+    """
     payload = {}
     for key in SIGNED_FIELDS:
         if key in envelope:
@@ -113,11 +178,11 @@ def _canonical_envelope(envelope: VPEEnvelope, skip_signature: bool = True) -> b
             if key == "scope" and isinstance(value, dict):
                 value = dict(sorted(value.items()))
             payload[key] = value
-    return _core_canonical_json(payload)
+    return _canonical_json(payload)
 
 
 # ---------------------------------------------------------------------------
-# Sign (backward-compat dict-returning API)
+# Sign
 # ---------------------------------------------------------------------------
 
 
@@ -134,7 +199,22 @@ def vpe_sign(
     counter: int = 1,
     public_key: bytes | None = None,
 ) -> VPEEnvelope:
-    """Create a signed VPE envelope (returns dict, not JSON string)."""
+    """Create a signed VPE envelope.
+
+    Args:
+        prompt: The prompt text being authorized.
+        issuer: Who is authorizing this (e.g. "user:rez").
+        audience: Which agent should execute (e.g. "agent:hermes-default").
+        private_key: 32-byte Ed25519 private (seed) key.
+        scope: Capability restrictions.
+        doc_sha256: SHA-256 of source document (auto from prompt if None).
+        ttl_seconds: Seconds until expiry (default 300).
+        nonce: Unique value for replay prevention (auto-generated).
+        counter: Monotonic counter for skipped-prompt detection.
+        public_key: Embed in envelope for self-contained verification.
+    """
+    if not _nacl_sign_available():
+        raise RuntimeError("Ed25519 signing requires the 'nacl' (PyNaCl) or 'cryptography' library.")
     if not prompt:
         raise ValueError("prompt must not be empty")
     if not issuer:
@@ -142,42 +222,53 @@ def vpe_sign(
     if not audience:
         raise ValueError("audience must not be empty")
 
-    nonce = nonce or secrets.token_hex(16)
-    doc_sha256 = doc_sha256 or hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-
-    env: VPEEnvelope = {
+    envelope: VPEEnvelope = {
         "vpe_version": VPE_VERSION,
         "prompt": prompt,
         "scope": scope or {},
         "issuer": issuer,
         "audience": audience,
-        "doc_sha256": doc_sha256,
+        "doc_sha256": doc_sha256 if doc_sha256 is not None else hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
         "ttl_seconds": ttl_seconds,
         "iat": int(time.time()),
-        "nonce": nonce,
+        "nonce": nonce or secrets.token_hex(16),
         "counter": counter,
         "cert_chain": None,
     }
     if public_key is not None:
-        env["public_key"] = public_key.hex()
-
-    env["signature"] = _sign_bytes(_canonical_envelope(env), private_key).hex()
-    return env
+        envelope["public_key"] = public_key.hex()
+    envelope["signature"] = _sign_bytes(_canonical_envelope(envelope), private_key).hex()
+    return envelope
 
 
 # ---------------------------------------------------------------------------
-# Verify helpers & Verify (backward-compat dict + VPEResult API)
+# Verify
 # ---------------------------------------------------------------------------
 
-_ERROR_MISSING_FIELD = "missing required field: {}"
+_ERROR_MISSING_CRYPTO = "no crypto library available (install pynacl or cryptography)"
 _ERROR_PUBLIC_KEY_MISSING = "no public_key in envelope and no public_key provided"
 
 
 def _check_required_fields(envelope: VPEEnvelope) -> str | None:
     for field in SIGNED_FIELDS:
         if field not in envelope:
-            return _ERROR_MISSING_FIELD.format(field)
+            return f"missing required field: {field}"
     return None
+
+
+def _check_version(envelope: VPEEnvelope) -> str | None:
+    v = envelope.get("vpe_version", "")
+    return None if v == VPE_VERSION else f"envelope version mismatch: expected {VPE_VERSION}, got {v}"
+
+
+def _check_expiry(envelope: VPEEnvelope) -> str | None:
+    ttl = envelope.get("ttl_seconds", 0)
+    if ttl <= 0:
+        return None
+    iat = envelope.get("iat", 0)
+    if iat <= 0:
+        return None
+    return None if int(time.time()) <= iat + ttl else "envelope has expired"
 
 
 def _check_nonce_replay(nonce: str, seen_nonces: set | None = None) -> str | None:
@@ -220,37 +311,67 @@ def vpe_verify(
     actual_args: dict[str, Any] | None = None,
     skip_checks: list[str] | None = None,
 ) -> VPEResult:
-    """Verify a VPE envelope (dict input, VPEResult output).
+    """Verify a VPE envelope.
 
-    Checks: 1) required fields, 2) version, 3) TTL expiry,
-    4) signature, 5) nonce replay, 6) counter monotonic, 7) scope.
+    Checks: required fields, crypto, version, TTL, signature, nonce replay,
+    counter monotonic, scope constraints.
+
+    Args:
+        envelope: The VPE envelope dict to verify.
+        public_key: 32-byte Ed25519 public key (extracted from envelope if None).
+        seen_nonces: Optional set for replay detection.
+        last_counter: Optional last counter for monotonicity check.
+        actual_args: Optional tool-call args for scope validation.
+        skip_checks: Check names to skip (expiry, replay, counter, scope).
     """
     skip = set(skip_checks or [])
 
-    # 1. Required fields
     err = _check_required_fields(envelope)
     if err:
         return VPEResult(False, err)
+    if not _ensure_nacl():
+        return VPEResult(False, _ERROR_MISSING_CRYPTO)
+    if "version" not in skip:
+        err = _check_version(envelope)
+        if err:
+            return VPEResult(False, err)
+    if "expiry" not in skip:
+        err = _check_expiry(envelope)
+        if err:
+            return VPEResult(False, err)
 
-    # 2-4. Delegate version check, TTL, and signature to core
-    env_str = json.dumps(envelope, separators=(",", ":"))
-    core_result = _core_verify(env_str, public_key=public_key)
-    if not core_result["valid"]:
-        return VPEResult(False, core_result["reason"])
+    pk = public_key
+    if pk is None:
+        pk_hex = envelope.get("public_key", "")
+        if not pk_hex:
+            return VPEResult(False, _ERROR_PUBLIC_KEY_MISSING)
+        try:
+            pk = bytes.fromhex(pk_hex)
+        except ValueError:
+            return VPEResult(False, "invalid public_key format (not hex)")
+    if len(pk) != 32:
+        return VPEResult(False, f"invalid public_key length: expected 32 bytes, got {len(pk)}")
 
-    # 5. Nonce replay
+    sig_hex = envelope.get("signature", "")
+    try:
+        sig = bytes.fromhex(sig_hex)
+    except ValueError:
+        return VPEResult(False, "invalid signature format (not hex)")
+    if len(sig) != 64:
+        return VPEResult(False, f"invalid signature length: expected 64 bytes, got {len(sig)}")
+
+    to_verify = _canonical_envelope(envelope)
+    if not _verify_bytes(to_verify, sig, pk):
+        return VPEResult(False, "signature verification failed")
+
     if "replay" not in skip:
         err = _check_nonce_replay(envelope.get("nonce", ""), seen_nonces)
         if err:
             return VPEResult(False, err)
-
-    # 6. Counter monotonic
     if "counter" not in skip:
         err = _check_counter_monotonic(envelope.get("counter", 0), last_counter)
         if err:
             return VPEResult(False, err)
-
-    # 7. Scope
     if "scope" not in skip:
         err = _check_scope(envelope, actual_args)
         if err:
@@ -265,28 +386,26 @@ def vpe_verify(
 
 
 def save_keypair(private_key: bytes, public_key: bytes, path: str) -> None:
-    """Save a keypair to disk (hex-encoded, chmod 0600)."""
     os.makedirs(path, exist_ok=True)
-    for p, data in [
-        (os.path.join(path, "vpe_private.key"), private_key),
-        (os.path.join(path, "vpe_public.key"), public_key),
-    ]:
+    priv_path = os.path.join(path, "vpe_private.key")
+    pub_path = os.path.join(path, "vpe_public.key")
+    for p, data in [(priv_path, private_key), (pub_path, public_key)]:
         with open(p, "wb") as f:
             f.write(data.hex().encode("utf-8"))
         os.chmod(p, 0o600)
 
 
 def load_keypair(path: str) -> tuple[bytes, bytes]:
-    """Load a keypair from disk (hex-encoded)."""
-    with open(os.path.join(path, "vpe_private.key")) as f:
+    priv_path = os.path.join(path, "vpe_private.key")
+    pub_path = os.path.join(path, "vpe_public.key")
+    with open(priv_path) as f:
         private_key = bytes.fromhex(f.read().strip())
-    with open(os.path.join(path, "vpe_public.key")) as f:
+    with open(pub_path) as f:
         public_key = bytes.fromhex(f.read().strip())
     return (private_key, public_key)
 
 
 def load_or_generate_keypair(path: str) -> tuple[bytes, bytes]:
-    """Load an existing keypair or generate + save a new one."""
     priv_path = os.path.join(path, "vpe_private.key")
     if os.path.exists(priv_path):
         return load_keypair(path)
