@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import re
-import subprocess
+import socket
+import struct
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,6 +41,31 @@ _ED25519_MULTICODEC_PREFIX = bytes([0xED])
 
 # DNS prefix for VPE key discovery
 _VPE_DNS_PREFIX = "_vpe."
+
+# Default DNS resolver (Cloudflare)
+_DEFAULT_DNS_SERVER = "1.1.1.1"
+_DNS_PORT = 53
+_DNS_TIMEOUT = 5  # seconds
+_DNS_RETRIES = 2
+
+# DNS query/response constants
+_DNS_QR_QUERY = 0x0000
+_DNS_QR_RESPONSE = 0x8000
+_DNS_OPCODE_STANDARD = 0x0000
+_DNS_FLAG_RD = 0x0100  # Recursion desired
+_DNS_FLAG_TC = 0x0200  # Truncated response
+_DNS_RCODE_NXDOMAIN = 3
+_DNS_TYPE_TXT = 16
+_DNS_CLASS_IN = 1
+
+
+class FederationError(Exception):
+    """Raised when a federation operation encounters invalid or malformed data.
+
+    Distinct from standard Python exceptions — callers catch this
+    specifically to handle corrupted trust material, malformed DNS
+    responses, or protocol violations without crashing the caller.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -205,58 +232,270 @@ class TrustAnchorRegistry:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_dns_txt(domain: str) -> list[str]:
-    """Query TXT records for a domain using system tools.
+def _get_system_resolver() -> str:
+    """Return the system's configured DNS resolver from ``/etc/resolv.conf``.
 
-    Tries ``dig`` first, falls back to ``host``, then returns empty on failure.
+    Falls back to ``1.1.1.1`` (Cloudflare) when the system file is
+    unavailable, empty, or contains no ``nameserver`` directive.
+    """
+    try:
+        with open("/etc/resolv.conf") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 2 and parts[0] == "nameserver":
+                    return parts[1]
+    except (OSError, FileNotFoundError):
+        pass
+    return _DEFAULT_DNS_SERVER
+
+
+def _build_dns_query(domain: str) -> tuple[bytes, int]:
+    """Build a DNS query packet for a TXT record lookup.
+
+    Wire format::
+
+        12-byte header (ID, flags, counts)
+        + question section (QNAME, QTYPE=16(TXT), QCLASS=1(IN))
+
+    Args:
+        domain: Fully qualified domain name to query.
+
+    Returns:
+        Tuple of ``(raw_query_packet, query_id)`` where ``query_id``
+        is a random 16-bit identifier used to match the response.
+    """
+    query_id = random.randint(0, 65535)
+    header = struct.pack(
+        "!HHHHHH",
+        query_id,
+        _DNS_FLAG_RD,  # Standard query with recursion desired
+        1,  # QDCOUNT
+        0,  # ANCOUNT
+        0,  # NSCOUNT
+        0,  # ARCOUNT
+    )
+
+    # Encode domain as length-prefixed labels
+    question = b""
+    for part in domain.encode("ascii").split(b"."):
+        question += bytes([len(part)]) + part
+    question += b"\x00"  # Root label (name terminator)
+
+    # QTYPE + QCLASS
+    question += struct.pack("!HH", _DNS_TYPE_TXT, _DNS_CLASS_IN)
+
+    return header + question, query_id
+
+
+def _parse_name(data: bytes, offset: int) -> tuple[str, int]:
+    """Parse a DNS name starting at ``offset``, handling compression pointers.
+
+    DNS names are sequences of length-prefixed labels terminated by a
+    zero-length root label. Compression pointers (``0xC0``) redirect
+    to an earlier position in the packet.
+
+    Args:
+        data: Full DNS response packet.
+        offset: Starting position of the name.
+
+    Returns:
+        ``(decoded_name, new_offset)`` where ``new_offset`` is the position
+        in the packet *immediately after* the name representation that
+        started at the original offset (2 bytes for a pointer, or past
+        the root terminator for an uncompressed name). For compressed
+        names, the jumps happen internally but only the 2 pointer bytes
+        are consumed at the outer offset.
+    """
+    labels: list[str] = []
+    current = offset
+    jumped = False
+
+    while current < len(data):
+        length = data[current]
+        if length & 0xC0:  # Compression pointer (upper 2 bits set)
+            if current + 2 > len(data):
+                raise FederationError("Truncated DNS compression pointer")
+            if not jumped:
+                # Only advance the caller's offset past the pointer itself
+                offset = current + 2
+                jumped = True
+            pointer = ((length & 0x3F) << 8) | data[current + 1]
+            current = pointer
+        elif length == 0:  # Root label (end of name)
+            if not jumped:
+                offset = current + 1  # Past the terminating zero
+            break
+        else:
+            if current + 1 + length > len(data):
+                raise FederationError("Truncated DNS label in name")
+            label = data[current + 1 : current + 1 + length].decode(
+                "ascii", errors="replace"
+            )
+            labels.append(label)
+            current += 1 + length
+            if not jumped:
+                offset = current
+
+    return ".".join(labels), offset
+
+
+def _parse_dns_response(data: bytes, expected_id: int) -> list[str]:
+    """Parse a DNS response and extract TXT record strings.
+
+    Handles the full response parsing chain: header validation, question
+    section skipping, answer section iteration with compression-aware
+    name parsing, and TXT RDATA extraction.
+
+    Args:
+        data: Raw DNS response bytes (UDP response payload).
+        expected_id: The query ID that was sent; responses with a
+            mismatched ID are rejected.
+
+    Returns:
+        List of TXT record string values found in the answer section.
+        Returns an empty list for NXDOMAIN (no records).
+
+    Raises:
+        FederationError: If the response is malformed (truncated,
+            ID mismatch, not a response), truncated (TC=1), or has
+            a non-NXDOMAIN error code.
+    """
+    if len(data) < 12:
+        raise FederationError("DNS response too short")
+
+    resp_id, flags, qdcount, ancount, nscount, arcount = struct.unpack(
+        "!HHHHHH", data[:12]
+    )
+
+    if resp_id != expected_id:
+        raise FederationError(
+            f"DNS response ID mismatch: {resp_id} != {expected_id}"
+        )
+
+    if not (flags & _DNS_QR_RESPONSE):
+        raise FederationError("Not a DNS response (QR bit not set)")
+
+    rcode = flags & 0x000F
+    if rcode == _DNS_RCODE_NXDOMAIN:
+        return []  # Domain does not exist — not an error, just empty
+    if rcode != 0:
+        raise FederationError(f"DNS server error: RCODE={rcode}")
+
+    if flags & _DNS_FLAG_TC:
+        raise FederationError("DNS response truncated (TC=1); try TCP fallback")
+
+    offset = 12
+
+    # Skip question section
+    for _ in range(qdcount):
+        _, offset = _parse_name(data, offset)
+        offset += 4  # Skip QTYPE + QCLASS
+
+    records: list[str] = []
+
+    for _ in range(ancount):
+        if offset >= len(data):
+            raise FederationError("Truncated DNS answer section")
+
+        # Parse answer name (may be compressed)
+        _, offset = _parse_name(data, offset)
+        if offset + 10 > len(data):
+            raise FederationError("Truncated DNS answer header")
+
+        atype, aclass, attl, rdlength = struct.unpack(
+            "!HHIH", data[offset : offset + 10]
+        )
+        _ = attl  # TTL is available but unused here
+        offset += 10
+
+        if offset + rdlength > len(data):
+            raise FederationError(
+                f"Truncated DNS RDATA: declared {rdlength} bytes, "
+                f"{len(data) - offset} available"
+            )
+
+        # Only extract TXT records (type 16) of class IN (1)
+        if atype == _DNS_TYPE_TXT and aclass == _DNS_CLASS_IN:
+            rdata = data[offset : offset + rdlength]
+            pos = 0
+            while pos < rdlength:
+                txt_len = rdata[pos]
+                pos += 1
+                if pos + txt_len > rdlength:
+                    break  # Malformed TXT length; skip remaining
+                txt = rdata[pos : pos + txt_len].decode("ascii", errors="replace")
+                records.append(txt)
+                pos += txt_len
+
+        offset += rdlength
+
+    return records
+
+
+def _send_dns_query(
+    domain: str, resolver: str | None = None
+) -> list[str]:
+    """Send a DNS TXT query over UDP and return the parsed records.
+
+    Implements retry logic: up to ``_DNS_RETRIES`` attempts on
+    socket timeout, with a short per-attempt timeout of ``_DNS_TIMEOUT``
+    seconds. Uses the system resolver from ``/etc/resolv.conf`` when
+    ``resolver`` is ``None``.
+
+    Args:
+        domain: Fully qualified domain name to query.
+        resolver: Optional DNS server address (IP string).
+            Defaults to the system resolver.
+
+    Returns:
+        List of TXT record strings.
+
+    Raises:
+        FederationError: On socket errors, timeouts (after retries
+            exhausted), or malformed responses.
+    """
+    if resolver is None:
+        resolver = _get_system_resolver()
+
+    query_packet, query_id = _build_dns_query(domain)
+    last_error: str | None = None
+
+    for attempt in range(_DNS_RETRIES):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(_DNS_TIMEOUT)
+        try:
+            sock.sendto(query_packet, (resolver, _DNS_PORT))
+
+            response_data, _ = sock.recvfrom(4096)
+            return _parse_dns_response(response_data, query_id)
+        except socket.timeout:
+            last_error = f"DNS timeout after {_DNS_TIMEOUT}s (attempt {attempt + 1}/{_DNS_RETRIES})"
+        except OSError as exc:
+            last_error = f"DNS socket error: {exc}"
+        finally:
+            sock.close()
+
+    raise FederationError(last_error or "DNS query failed after all retries")
+
+
+def _resolve_dns_txt(domain: str) -> list[str]:
+    """Query TXT records for a domain using a Python-native DNS resolver.
+
+    Resolver uses the system DNS server (from ``/etc/resolv.conf``)
+    with a Cloudflare ``1.1.1.1`` fallback. No external ``dig`` or
+    ``host`` tools required.
 
     Args:
         domain: Fully qualified domain name.
 
     Returns:
-        List of TXT record values (concatenated strings).
+        List of TXT record values. Empty list on NXDOMAIN, socket
+        errors, or malformed responses (never raises).
     """
-    # Try dig first
     try:
-        result = subprocess.run(
-            ["dig", "+short", "-t", "TXT", domain],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            records = []
-            for line in result.stdout.strip().splitlines():
-                # dig output: "text" (quoted)
-                line = line.strip().strip('"')
-                if line:
-                    records.append(line)
-            return records
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        pass
-
-    # Fallback to host
-    try:
-        result = subprocess.run(
-            ["host", "-t", "TXT", domain],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            records = []
-            for line in result.stdout.strip().splitlines():
-                # host output: "domain descriptive text "text""
-                if "descriptive text" in line:
-                    txt = line.split('"', 1)[-1]
-                    txt = txt.rsplit('"', 1)[0] if '"' in txt else txt
-                    if txt:
-                        records.append(txt)
-            return records
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        pass
-
-    return []
+        return _send_dns_query(domain)
+    except (FederationError, OSError):
+        return []
 
 
 def resolve_via_dns(agent_domain: str) -> bytes | None:
@@ -266,12 +505,24 @@ def resolve_via_dns(agent_domain: str) -> bytes | None:
 
         vpe-key=<hex_encoded_ed25519_public_key>
 
+    The expected key is a 64-character hex string (32 bytes) suitable
+    for Ed25519 signature verification.
+
+    Example DNS TXT record::
+
+        _vpe.alice.internal.corp.com. 300 IN TXT "vpe-key=abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+
     Args:
         agent_domain: Domain name of the target agent
             (e.g. ``"hermes.internal.corp.com"``).
 
     Returns:
         Raw 32-byte Ed25519 public key, or ``None`` if not found.
+
+    Raises:
+        FederationError: If the DNS response is malformed or truncated
+            (the response exists but cannot be interpreted). Callers that
+            prefer graceful degradation should catch this.
     """
     dns_name = f"{_VPE_DNS_PREFIX}{agent_domain}"
     records = _resolve_dns_txt(dns_name)
