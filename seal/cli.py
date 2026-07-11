@@ -683,6 +683,74 @@ def _cmd_audit(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Federation CLI commands (export/import trust bundles)
+# ---------------------------------------------------------------------------
+
+
+def cmd_federation_export(args) -> int:
+    """Export trust anchors as a signed JSON bundle."""
+    from seal.federation import TrustAnchorRegistry, export_trust_bundle
+
+    registry_path = getattr(args, "registry", str(Path.home() / ".seal" / "trust_anchors.json"))
+    registry = TrustAnchorRegistry(path=registry_path)
+
+    exporter_id = getattr(args, "exporter_id", "agent:cli")
+    _pk_attr = getattr(args, "private_key", None)
+    key_path = Path(_pk_attr or str(SEAL_DIR / "seal_private.key"))
+    if not key_path.exists():
+        print(f"error: private key not found at {key_path} (run 'seal genkey' first)", file=sys.stderr)
+        return 1
+
+    private_key = key_path.read_bytes()
+
+    try:
+        bundle = export_trust_bundle(
+            registry,
+            exporter_agent_id=exporter_id,
+            private_key=private_key,
+        )
+    except Exception as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    out_path = getattr(args, "out", None)
+    if out_path:
+        Path(out_path).write_text(bundle + "\n")
+        print(f"wrote trust bundle to {out_path}")
+    else:
+        print(bundle)
+    return 0
+
+
+def cmd_federation_import(args) -> int:
+    """Import trust anchors from a signed JSON bundle."""
+    from seal.federation import TrustAnchorRegistry, import_trust_bundle
+
+    bundle_path = Path(args.bundle_file)
+    if not bundle_path.exists():
+        print(f"error: bundle file not found at {bundle_path}", file=sys.stderr)
+        return 1
+
+    bundle_str = bundle_path.read_text().strip()
+    registry_path = getattr(args, "registry", str(Path.home() / ".seal" / "trust_anchors.json"))
+    registry = TrustAnchorRegistry(path=registry_path)
+
+    trusted = None
+    exporters = getattr(args, "trusted_exporters", None)
+    if exporters:
+        trusted = set(exporters)
+
+    try:
+        result = import_trust_bundle(bundle_str, registry, trusted_exporter_ids=trusted)
+    except Exception as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    print(f"ok: {result['reason']}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Parser builder
 # ---------------------------------------------------------------------------
 
@@ -817,6 +885,34 @@ def build_parser() -> argparse.ArgumentParser:
     # --- quickstart ---
     sub.add_parser("quickstart", help="run an end-to-end demo (throwaway keys, no side-effects)")
 
+    # --- federation ---
+    p_fed = sub.add_parser("federation", help="export/import trust anchor bundles")
+    fed_sub = p_fed.add_subparsers(dest="federation_command", required=True)
+
+    p_fed_export = fed_sub.add_parser("export", help="export trust anchors as a signed bundle")
+    p_fed_export.add_argument("--exporter-id", default="agent:cli", help="exporter agent identity (default: agent:cli)")
+    p_fed_export.add_argument("--private-key", help="path to Ed25519 private key file (default: ~/.seal/seal_private.key)")
+    p_fed_export.add_argument(
+        "--registry",
+        default=str(Path.home() / ".seal" / "trust_anchors.json"),
+        help="path to trust anchor registry (default: ~/.seal/trust_anchors.json)",
+    )
+    p_fed_export.add_argument("--out", metavar="PATH", help="write bundle to file (default: stdout)")
+
+    p_fed_import = fed_sub.add_parser("import", help="import trust anchors from a signed bundle")
+    p_fed_import.add_argument("bundle_file", help="path to bundle JSON file")
+    p_fed_import.add_argument(
+        "--registry",
+        default=str(Path.home() / ".seal" / "trust_anchors.json"),
+        help="path to trust anchor registry (default: ~/.seal/trust_anchors.json)",
+    )
+    p_fed_import.add_argument(
+        "--trusted-exporter",
+        action="append",
+        dest="trusted_exporters",
+        help="allowed exporter agent ID (may be specified multiple times)",
+    )
+
     # --- fuzz ---
     p_fuzz = sub.add_parser("fuzz", help="run EPD pattern mutation fuzzer benchmark")
     p_fuzz.add_argument("--count", type=int, default=1000, help="minimum mutations to generate (default: 1000)")
@@ -883,6 +979,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     elif args.command == "quickstart":
         return cmd_quickstart(args)
+    elif args.command == "federation":
+        if args.federation_command == "export":
+            return cmd_federation_export(args)
+        elif args.federation_command == "import":
+            return cmd_federation_import(args)
+        return 2
     elif args.command == "fuzz":
         from seal.epd.fuzzer import main as fuzz_main
 

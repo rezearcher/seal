@@ -13,7 +13,9 @@ from seal import (
     FederatedSignResult,
     FederationAuditLog,
     TrustAnchorRegistry,
+    export_trust_bundle,
     generate_key_pair,
+    import_trust_bundle,
     resolve_trust_anchor,
     resolve_via_did,
     resolve_via_dns,
@@ -1233,3 +1235,365 @@ class TestResolveViaDIDDocument:
         url = _parse_did_ion("did:ion:EiD9k9f3q5m8w2r7t6y1u4p3a6s8d9f0g1h2j3k4l5z6x7c8v9b0n1m2")
         assert url.startswith("https://discover.did.msidentity.com/1.0/identifiers/")
         assert "EiD9k9f3q5m8w2r7t6y1u4p3a6s8d9f0g1h2j3k4l5z6x7c8v9b0n1m2" in url
+
+
+# ---------------------------------------------------------------------------
+# Trust bundle export/import
+# ---------------------------------------------------------------------------
+
+
+class TestCanonicalTrustBundle:
+    def test_deterministic_ordering(self):
+        """_canonical_trust_bundle produces deterministic output."""
+        from seal.federation import _canonical_trust_bundle
+
+        bundle = {
+            "vpe_trust_bundle": "1",
+            "exported_at": "2026-07-11T04:30:00Z",
+            "exporter_agent_id": "agent:alice",
+            "exporter_public_key_hex": "ab" * 32,
+            "anchors": {"z-agent": "01" * 32, "a-agent": "02" * 32},
+        }
+        canon1 = _canonical_trust_bundle(bundle)
+        canon2 = _canonical_trust_bundle(bundle)
+        assert canon1 == canon2
+
+    def test_anchors_sorted_lexicographically(self):
+        """Anchors are sorted lexicographically in canonical output."""
+        from seal.federation import _canonical_trust_bundle
+
+        bundle = {
+            "vpe_trust_bundle": "1",
+            "exported_at": "2026-07-11T04:30:00Z",
+            "exporter_agent_id": "agent:alice",
+            "exporter_public_key_hex": "ab" * 32,
+            "anchors": {"z-agent": "01" * 32, "a-agent": "02" * 32},
+        }
+        canon = _canonical_trust_bundle(bundle).decode("utf-8")
+        # a-agent should appear before z-agent
+        a_pos = canon.index("a-agent")
+        z_pos = canon.index("z-agent")
+        assert a_pos < z_pos
+
+    def test_missing_fields_default(self):
+        """Missing fields default to empty string or empty dict."""
+        from seal.federation import _canonical_trust_bundle
+
+        canon = _canonical_trust_bundle({}).decode("utf-8")
+        assert '"vpe_trust_bundle":""' in canon
+        assert '"anchors":{}' in canon
+        assert '"exported_at":""' in canon
+
+
+class TestExportTrustBundle:
+    def test_export_produces_valid_bundle(self, populated_registry, alice_keys):
+        """Basic export returns valid JSON with required fields."""
+        bundle_str = export_trust_bundle(
+            populated_registry,
+            exporter_agent_id="agent:alice",
+            private_key=alice_keys["private_key"],
+        )
+        bundle = json.loads(bundle_str)
+        assert bundle["vpe_trust_bundle"] == "1"
+        assert bundle["exporter_agent_id"] == "agent:alice"
+        assert "exported_at" in bundle
+        assert "exporter_public_key_hex" in bundle
+        assert "anchors" in bundle
+        assert "signature" in bundle
+        assert len(bundle["anchors"]) == 2
+
+    def test_export_empty_registry_raises(self, tmp_registry, alice_keys):
+        """Export with no anchors raises FederationError."""
+        from seal.federation import FederationError
+
+        with pytest.raises(FederationError, match="no trust anchors registered"):
+            export_trust_bundle(
+                tmp_registry,  # empty registry
+                exporter_agent_id="agent:alice",
+                private_key=alice_keys["private_key"],
+            )
+
+    def test_export_bundle_signature_verifiable(self, populated_registry, alice_keys):
+        """The bundle signature can be verified with the embedded public key."""
+        bundle_str = export_trust_bundle(
+            populated_registry,
+            exporter_agent_id="agent:alice",
+            private_key=alice_keys["private_key"],
+        )
+        bundle = json.loads(bundle_str)
+
+        from seal.federation import _canonical_trust_bundle
+        from seal._base import _load_public_key
+
+        pk_hex = bundle["exporter_public_key_hex"]
+        pk = _load_public_key(bytes.fromhex(pk_hex))
+        sig = bytes.fromhex(bundle["signature"])
+
+        # Copy bundle without signature, canonicalize, verify
+        payload = dict(bundle)
+        del payload["signature"]
+        canon = _canonical_trust_bundle(payload)
+
+        # Should not raise
+        pk.verify(sig, canon)
+
+    def test_export_exported_at_is_iso_timestamp(self, populated_registry, alice_keys):
+        """exported_at field is a valid ISO 8601 timestamp."""
+        bundle_str = export_trust_bundle(
+            populated_registry,
+            exporter_agent_id="agent:alice",
+            private_key=alice_keys["private_key"],
+        )
+        bundle = json.loads(bundle_str)
+
+        import datetime
+
+        # Should parse as UTC ISO timestamp
+        ts = bundle["exported_at"]
+        parsed = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        assert isinstance(parsed, datetime.datetime)
+
+
+class TestImportTrustBundle:
+    def test_import_valid_bundle(self, populated_registry, alice_keys, tmp_registry):
+        """Import a valid bundle succeeds and anchors are registered."""
+        bundle_str = export_trust_bundle(
+            populated_registry,
+            exporter_agent_id="agent:alice",
+            private_key=alice_keys["private_key"],
+        )
+
+        result = import_trust_bundle(bundle_str, tmp_registry)
+        assert result["ok"] is True
+        assert result["imported_count"] == 2
+        assert result["exporter_agent_id"] == "agent:alice"
+
+        # Verify anchors were imported
+        assert tmp_registry.lookup("agent:alice") is not None
+        assert tmp_registry.lookup("agent:bob") is not None
+
+    def test_import_duplicate_is_idempotent(self, populated_registry, alice_keys, tmp_registry):
+        """Re-importing the same anchor does not error (idempotent)."""
+        bundle_str = export_trust_bundle(
+            populated_registry,
+            exporter_agent_id="agent:alice",
+            private_key=alice_keys["private_key"],
+        )
+
+        # First import
+        result1 = import_trust_bundle(bundle_str, tmp_registry)
+        assert result1["imported_count"] == 2
+
+        # Second import — should still succeed with same count
+        result2 = import_trust_bundle(bundle_str, tmp_registry)
+        # Anchors already exist, register updates them (counts them as imported)
+        assert result2["ok"] is True
+        assert result2["imported_count"] == 2
+
+    def test_import_invalid_json_raises(self, tmp_registry):
+        """Malformed JSON raises FederationError."""
+        from seal.federation import FederationError
+
+        with pytest.raises(FederationError, match="Invalid trust bundle JSON"):
+            import_trust_bundle("not valid json{{", tmp_registry)
+
+    def test_import_not_a_dict_raises(self, tmp_registry):
+        """Non-dict bundle raises FederationError."""
+        from seal.federation import FederationError
+
+        with pytest.raises(FederationError, match="Trust bundle must be a JSON object"):
+            import_trust_bundle('["array", "not", "object"]', tmp_registry)
+
+    def test_import_wrong_version_raises(self, tmp_registry, populated_registry, alice_keys):
+        """Wrong bundle version raises FederationError."""
+        from seal.federation import FederationError
+
+        bundle_str = export_trust_bundle(
+            populated_registry,
+            exporter_agent_id="agent:alice",
+            private_key=alice_keys["private_key"],
+        )
+        bundle = json.loads(bundle_str)
+        bundle["vpe_trust_bundle"] = "999"
+        tampered = json.dumps(bundle, separators=(",", ":"))
+
+        with pytest.raises(FederationError, match="Unsupported trust bundle version"):
+            import_trust_bundle(tampered, tmp_registry)
+
+    def test_import_tampered_bundle_raises(self, populated_registry, alice_keys, tmp_registry):
+        """Tampered content fails signature verification."""
+        from seal.federation import FederationError
+
+        bundle_str = export_trust_bundle(
+            populated_registry,
+            exporter_agent_id="agent:alice",
+            private_key=alice_keys["private_key"],
+        )
+        bundle = json.loads(bundle_str)
+        # Tamper with an anchor value
+        bundle["anchors"]["agent:alice"] = "ff" * 32
+        tampered = json.dumps(bundle, separators=(",", ":"))
+
+        with pytest.raises(FederationError, match="signature verification failed|signature mismatch"):
+            import_trust_bundle(tampered, tmp_registry)
+
+    def test_import_untrusted_exporter_raises(self, populated_registry, alice_keys, tmp_registry):
+        """Exporter not in trusted set raises FederationError."""
+        from seal.federation import FederationError
+
+        bundle_str = export_trust_bundle(
+            populated_registry,
+            exporter_agent_id="agent:alice",
+            private_key=alice_keys["private_key"],
+        )
+
+        with pytest.raises(FederationError, match="Untrusted exporter"):
+            import_trust_bundle(
+                bundle_str, tmp_registry, trusted_exporter_ids={"agent:bob"}
+            )
+
+    def test_import_missing_exporter_id_raises(self, populated_registry, alice_keys, tmp_registry):
+        """Bundle without exporter_agent_id raises FederationError."""
+        from seal.federation import FederationError
+
+        bundle_str = export_trust_bundle(
+            populated_registry,
+            exporter_agent_id="agent:alice",
+            private_key=alice_keys["private_key"],
+        )
+        bundle = json.loads(bundle_str)
+        del bundle["exporter_agent_id"]
+        tampered = json.dumps(bundle, separators=(",", ":"))
+
+        with pytest.raises(FederationError, match="missing exporter_agent_id"):
+            import_trust_bundle(tampered, tmp_registry)
+
+    def test_import_missing_signature_raises(self, populated_registry, alice_keys, tmp_registry):
+        """Bundle without signature raises FederationError."""
+        from seal.federation import FederationError
+
+        bundle_str = export_trust_bundle(
+            populated_registry,
+            exporter_agent_id="agent:alice",
+            private_key=alice_keys["private_key"],
+        )
+        bundle = json.loads(bundle_str)
+        del bundle["signature"]
+        tampered = json.dumps(bundle, separators=(",", ":"))
+
+        with pytest.raises(FederationError, match="missing signature"):
+            import_trust_bundle(tampered, tmp_registry)
+
+    def test_import_missing_public_key_raises(self, populated_registry, alice_keys, tmp_registry):
+        """Bundle without exporter_public_key_hex raises FederationError."""
+        from seal.federation import FederationError
+
+        bundle_str = export_trust_bundle(
+            populated_registry,
+            exporter_agent_id="agent:alice",
+            private_key=alice_keys["private_key"],
+        )
+        bundle = json.loads(bundle_str)
+        del bundle["exporter_public_key_hex"]
+        tampered = json.dumps(bundle, separators=(",", ":"))
+
+        with pytest.raises(FederationError, match="missing exporter_public_key_hex"):
+            import_trust_bundle(tampered, tmp_registry)
+
+    def test_import_partial_anchor_skip(self, tmp_registry, alice_keys):
+        """Anchors with invalid hex keys are skipped without failing the whole import."""
+        bundle = {
+            "vpe_trust_bundle": "1",
+            "exported_at": "2026-07-11T04:30:00Z",
+            "exporter_agent_id": "agent:test",
+            "exporter_public_key_hex": alice_keys["public_key"].hex(),
+            "anchors": {
+                "agent:valid": alice_keys["public_key"].hex(),
+                "agent:invalid_hex": "not hex at all",
+                "agent:short_key": "abcd",
+            },
+        }
+        # Sign it properly
+        from seal.federation import _canonical_trust_bundle
+        from seal._base import _load_private_key
+
+        sk = _load_private_key(alice_keys["private_key"])
+        canon = _canonical_trust_bundle(bundle)
+        bundle["signature"] = sk.sign(canon).hex()
+        bundle_str = json.dumps(bundle, separators=(",", ":"))
+
+        result = import_trust_bundle(bundle_str, tmp_registry)
+        assert result["imported_count"] == 1  # Only the valid anchor was imported
+        assert tmp_registry.lookup("agent:valid") is not None
+
+
+class TestTrustBundleRoundtrip:
+    def test_export_import_roundtrip(self, populated_registry, alice_keys):
+        """Export and import on a separate registry transfers all anchors."""
+        import tempfile
+
+        # Export
+        bundle_str = export_trust_bundle(
+            populated_registry,
+            exporter_agent_id="agent:alice",
+            private_key=alice_keys["private_key"],
+        )
+
+        # Create a fresh registry
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
+            f.write("{}\n")
+            target_path = f.name
+
+        try:
+            from seal.federation import TrustAnchorRegistry
+            target_registry = TrustAnchorRegistry(path=target_path)
+
+            # Import
+            result = import_trust_bundle(bundle_str, target_registry)
+            assert result["ok"] is True
+            assert result["imported_count"] == 2
+
+            # Verify all anchors transferred
+            assert target_registry.lookup("agent:alice") == populated_registry.lookup("agent:alice")
+            assert target_registry.lookup("agent:bob") == populated_registry.lookup("agent:bob")
+        finally:
+            import os
+            try:
+                os.unlink(target_path)
+            except OSError:
+                pass
+
+    def test_export_import_cross_agent(self, populated_registry, alice_keys, bob_keys):
+        """Alice exports, Bob imports using Bob's key for signing the export."""
+        import tempfile
+
+        # Alice registers one anchor, exports signed with her key
+        bundle_str = export_trust_bundle(
+            populated_registry,
+            exporter_agent_id="agent:alice",
+            private_key=alice_keys["private_key"],
+        )
+
+        # Bob creates his own registry and imports Alice's bundle
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
+            f.write("{}\n")
+            target_path = f.name
+
+        try:
+            from seal.federation import TrustAnchorRegistry
+            bobs_registry = TrustAnchorRegistry(path=target_path)
+
+            result = import_trust_bundle(
+                bundle_str,
+                bobs_registry,
+                trusted_exporter_ids={"agent:alice"},
+            )
+            assert result["ok"] is True
+            assert result["imported_count"] == 2
+            assert bobs_registry.lookup("agent:alice") == populated_registry.lookup("agent:alice")
+        finally:
+            import os
+            try:
+                os.unlink(target_path)
+            except OSError:
+                pass
