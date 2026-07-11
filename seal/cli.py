@@ -891,7 +891,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_fed_export = fed_sub.add_parser("export", help="export trust anchors as a signed bundle")
     p_fed_export.add_argument("--exporter-id", default="agent:cli", help="exporter agent identity (default: agent:cli)")
-    p_fed_export.add_argument("--private-key", help="path to Ed25519 private key file (default: ~/.seal/seal_private.key)")
+    p_fed_export.add_argument(
+        "--private-key",
+        help="path to Ed25519 private key file (default: ~/.seal/seal_private.key)",
+    )
     p_fed_export.add_argument(
         "--registry",
         default=str(Path.home() / ".seal" / "trust_anchors.json"),

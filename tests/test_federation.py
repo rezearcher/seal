@@ -488,6 +488,7 @@ def _make_dns_header(
 ) -> bytes:
     """Build a DNS response header for test purposes."""
     import struct
+
     return struct.pack("!HHHHHH", query_id, flags, qdcount, ancount, nscount, arcount)
 
 
@@ -515,6 +516,7 @@ class TestFederationError:
     def test_is_exception(self):
         """FederationError is a proper Exception subclass."""
         from seal.federation import FederationError
+
         assert issubclass(FederationError, Exception)
         err = FederationError("test error")
         assert str(err) == "test error"
@@ -522,6 +524,7 @@ class TestFederationError:
     def test_caught_separately_from_value_error(self):
         """FederationError is distinct from standard exceptions."""
         from seal.federation import FederationError
+
         try:
             raise FederationError("malformed")
         except FederationError:
@@ -534,12 +537,14 @@ class TestDNSPacketBuilding:
     def test_build_dns_query_structure(self):
         """_build_dns_query produces a valid DNS query packet."""
         from seal.federation import _build_dns_query
+
         packet, qid = _build_dns_query("example.com")
 
         # Should start with the 12-byte header
         assert len(packet) >= 12
         # Header: ID should match
         import struct
+
         pid = struct.unpack("!H", packet[:2])[0]
         assert pid == qid
         # Flags should have RD=1
@@ -552,12 +557,14 @@ class TestDNSPacketBuilding:
     def test_build_dns_query_id_range(self):
         """Query ID should be in valid 16-bit range."""
         from seal.federation import _build_dns_query
+
         _, qid = _build_dns_query("test.com")
         assert 0 <= qid <= 65535
 
     def test_build_dns_query_contains_question(self):
         """Query packet should contain the encoded domain question."""
         from seal.federation import _build_dns_query
+
         packet, _ = _build_dns_query("example.com")
 
         # The question section starts after the 12-byte header
@@ -566,15 +573,17 @@ class TestDNSPacketBuilding:
         assert b"\x07example\x03com\x00" in question
         # Should end with QTYPE(16=TXT) + QCLASS(1=IN)
         import struct
+
         qtype, qclass = struct.unpack("!HH", question[-4:])
         assert qtype == 16  # TXT
-        assert qclass == 1   # IN
+        assert qclass == 1  # IN
 
 
 class TestDNSNameParsing:
     def test_parse_name_simple(self):
         """Parse a simple uncompressed DNS name."""
         from seal.federation import _parse_name
+
         data = _make_dns_name("example.com")
         name, offset = _parse_name(data, 0)
         assert name == "example.com"
@@ -583,6 +592,7 @@ class TestDNSNameParsing:
     def test_parse_name_multi_label(self):
         """Parse a multi-label DNS name."""
         from seal.federation import _parse_name
+
         data = _make_dns_name("_vpe.agent.internal.example.com")
         name, offset = _parse_name(data, 0)
         assert name == "_vpe.agent.internal.example.com"
@@ -591,6 +601,7 @@ class TestDNSNameParsing:
     def test_parse_name_single_label(self):
         """Parse a single-label DNS name (e.g. 'localhost')."""
         from seal.federation import _parse_name
+
         data = _make_dns_name("localhost")
         name, offset = _parse_name(data, 0)
         assert name == "localhost"
@@ -613,14 +624,16 @@ class TestDNSNameParsing:
 
     def test_parse_name_raises_on_truncated_pointer(self):
         """A truncated compression pointer raises FederationError."""
-        from seal.federation import _parse_name, FederationError
+        from seal.federation import FederationError, _parse_name
+
         data = b"\xc0"  # Only half a pointer
         with pytest.raises(FederationError, match="Truncated DNS compression pointer"):
             _parse_name(data, 0)
 
     def test_parse_name_raises_on_truncated_label(self):
         """A label that extends past the packet boundary raises FederationError."""
-        from seal.federation import _parse_name, FederationError
+        from seal.federation import FederationError, _parse_name
+
         data = b"\x05hello\x10" + b"x" * 10  # Length 16 label but only 10 bytes remain
         with pytest.raises(FederationError, match="Truncated DNS label"):
             _parse_name(data, 0)
@@ -629,20 +642,23 @@ class TestDNSNameParsing:
 class TestDNSResponseParsing:
     def test_parse_response_too_short(self):
         """Response shorter than 12 bytes raises FederationError."""
-        from seal.federation import _parse_dns_response, FederationError
+        from seal.federation import FederationError, _parse_dns_response
+
         with pytest.raises(FederationError, match="too short"):
             _parse_dns_response(b"\x00" * 10, 1)
 
     def test_parse_response_id_mismatch(self):
         """Response with mismatched ID raises FederationError."""
-        from seal.federation import _parse_dns_response, FederationError
+        from seal.federation import FederationError, _parse_dns_response
+
         header = _make_dns_header(query_id=42)  # Sent ID=42
         with pytest.raises(FederationError, match="ID mismatch"):
             _parse_dns_response(header, 99)  # Expected 99
 
     def test_parse_response_not_a_response(self):
         """Response without QR bit raises FederationError."""
-        from seal.federation import _parse_dns_response, FederationError
+        from seal.federation import FederationError, _parse_dns_response
+
         # Flags=0 (query, not response)
         header = _make_dns_header(query_id=1, flags=0x0000)
         with pytest.raises(FederationError, match="Not a DNS response"):
@@ -651,13 +667,15 @@ class TestDNSResponseParsing:
     def test_parse_response_nxdomain(self):
         """NXDOMAIN returns an empty list."""
         from seal.federation import _parse_dns_response
+
         # RCODE=3 (NXDOMAIN)
         header = _make_dns_header(query_id=1, flags=0x8183)
         assert _parse_dns_response(header, 1) == []
 
     def test_parse_response_truncated(self):
         """TC flag raises FederationError."""
-        from seal.federation import _parse_dns_response, FederationError
+        from seal.federation import FederationError, _parse_dns_response
+
         # Flags with TC=1 (0x8200)
         header = _make_dns_header(query_id=1, flags=0x8280)
         with pytest.raises(FederationError, match="truncated"):
@@ -665,7 +683,8 @@ class TestDNSResponseParsing:
 
     def test_parse_response_rcode_error(self):
         """Non-zero non-NXDOMAIN RCODE raises FederationError."""
-        from seal.federation import _parse_dns_response, FederationError
+        from seal.federation import FederationError, _parse_dns_response
+
         # RCODE=2 (ServFail)
         header = _make_dns_header(query_id=1, flags=0x8182)
         with pytest.raises(FederationError, match="RCODE=2"):
@@ -673,8 +692,9 @@ class TestDNSResponseParsing:
 
     def test_parse_response_single_txt(self):
         """Parse a response with a single TXT record."""
-        from seal.federation import _parse_dns_response
         import struct
+
+        from seal.federation import _parse_dns_response
 
         qid = 1001
         # Build a complete response:
@@ -698,8 +718,9 @@ class TestDNSResponseParsing:
 
     def test_parse_response_multiple_txt_records(self):
         """Parse a response with multiple TXT records in one answer."""
-        from seal.federation import _parse_dns_response
         import struct
+
+        from seal.federation import _parse_dns_response
 
         qid = 2002
         # Build response with multi-string TXT RDATA
@@ -727,8 +748,9 @@ class TestDNSResponseParsing:
 
     def test_parse_response_multiple_answers(self):
         """Parse a response with multiple answer records."""
-        from seal.federation import _parse_dns_response
         import struct
+
+        from seal.federation import _parse_dns_response
 
         qid = 3003
         header = _make_dns_header(
@@ -753,8 +775,9 @@ class TestDNSResponseParsing:
 
     def test_parse_response_ignores_non_txt(self):
         """Non-TXT record types are ignored."""
-        from seal.federation import _parse_dns_response
         import struct
+
+        from seal.federation import _parse_dns_response
 
         qid = 4004
         header = _make_dns_header(
@@ -780,6 +803,7 @@ class TestDNSResponseParsing:
     def test_parse_response_zero_answers(self):
         """A valid response with zero answers returns empty list."""
         from seal.federation import _parse_dns_response
+
         qid = 5005
         header = _make_dns_header(query_id=qid, flags=0x8180, qdcount=1, ancount=0)
         question = _make_dns_name("empty.example") + b"\x00\x10\x00\x01"
@@ -792,6 +816,7 @@ class TestSystemResolver:
     def test_get_system_resolver_returns_string(self):
         """_get_system_resolver returns a non-empty IP string."""
         from seal.federation import _get_system_resolver
+
         resolver = _get_system_resolver()
         assert isinstance(resolver, str)
         assert len(resolver) > 0
@@ -831,7 +856,8 @@ class TestResolveViaDNS:
         # vpe-key extraction logic via a manually constructed response
         # Test the regex path directly:
         import re
-        record = 'vpe-key=abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
+
+        record = "vpe-key=abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
         match = re.search(r"vpe-key=([a-fA-F0-9]{64})\b", record)
         assert match is not None
         key_bytes = bytes.fromhex(match.group(1))
@@ -840,16 +866,18 @@ class TestResolveViaDNS:
     def test_resolve_via_dns_bad_vpe_key(self):
         """Invalid hex in vpe-key returns None (graceful degradation)."""
         import re
+
         # Bad hex (zzz not valid)
-        record = 'vpe-key=zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz'
+        record = "vpe-key=zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
         match = re.search(r"vpe-key=([a-fA-F0-9]{64})\b", record)
         assert match is None  # zzz is not hex
 
     def test_resolve_via_dns_wrong_length_key(self):
         """A 63-char hex string (not 64) does not match vpe-key pattern."""
         import re
+
         # 63 chars (not 64)
-        record = 'vpe-key=abcdef0123456789abcdef0123456789abcdef0123456789abcdef012345678'
+        record = "vpe-key=abcdef0123456789abcdef0123456789abcdef0123456789abcdef012345678"
         match = re.search(r"vpe-key=([a-fA-F0-9]{64})\b", record)
         assert match is None  # Not 64 chars
 
@@ -857,7 +885,8 @@ class TestResolveViaDNS:
         """A TXT record without 'vpe-key=' prefix is ignored."""
         # Test via the regex path
         import re
-        record = 'some-other-txt-record'
+
+        record = "some-other-txt-record"
         match = re.search(r"vpe-key=([a-fA-F0-9]{64})\b", record)
         assert match is None
 
@@ -866,12 +895,14 @@ class TestResolveDNSTxt:
     def test_resolve_dns_txt_returns_list(self):
         """_resolve_dns_txt returns a list even on failure."""
         from seal.federation import _resolve_dns_txt
+
         result = _resolve_dns_txt("nonexistent-domain-for-testing-xyz.test")
         assert isinstance(result, list)
 
     def test_resolve_dns_txt_handles_malformed_gracefully(self):
         """_resolve_dns_txt never raises on bad input."""
         from seal.federation import _resolve_dns_txt
+
         # Even with an unqueryable domain, should return [] not crash
         result = _resolve_dns_txt("!@#$%^&*()_+.test")
         assert isinstance(result, list)
@@ -881,6 +912,7 @@ class TestDNSSendQuery:
     def test_send_dns_query_resolver_none(self):
         """Calling with resolver=None uses the system resolver."""
         from seal.federation import _send_dns_query
+
         # This shouldn't crash — should return [] for nonexistent or raise FederationError
         try:
             result = _send_dns_query("nonexistent-domain-for-testing-xyz.test")
@@ -888,6 +920,7 @@ class TestDNSSendQuery:
         except (OSError, Exception) as exc:
             # Network unavailable in CI — not a crash, just skip
             import socket
+
             if isinstance(exc, (socket.gaierror, OSError)):
                 pass
             else:
@@ -903,24 +936,28 @@ class TestParseDIDWeb:
     def test_bare_domain(self):
         """did:web:example.com → https://example.com/.well-known/did.json"""
         from seal.federation import _parse_did_web
+
         url = _parse_did_web("did:web:example.com")
         assert url == "https://example.com/.well-known/did.json"
 
     def test_with_path(self):
         """did:web:example.com:path:to:file → https://example.com/path/to/file/did.json"""
         from seal.federation import _parse_did_web
+
         url = _parse_did_web("did:web:example.com:path:to:file")
         assert url == "https://example.com/path/to/file/did.json"
 
     def test_ip_address_domain(self):
         """did:web:192.168.1.1 works as bare domain."""
         from seal.federation import _parse_did_web
+
         url = _parse_did_web("did:web:192.168.1.1")
         assert url == "https://192.168.1.1/.well-known/did.json"
 
     def test_empty_domain_raises(self):
         """Empty domain raises FederationError."""
-        from seal.federation import _parse_did_web, FederationError
+        from seal.federation import FederationError, _parse_did_web
+
         with pytest.raises(FederationError, match="Empty domain"):
             _parse_did_web("did:web:")
         with pytest.raises(FederationError, match="Empty domain"):
@@ -928,7 +965,8 @@ class TestParseDIDWeb:
 
     def test_wrong_prefix_raises(self):
         """Non-did:web prefix raises FederationError."""
-        from seal.federation import _parse_did_web, FederationError
+        from seal.federation import FederationError, _parse_did_web
+
         with pytest.raises(FederationError, match="Expected did:web"):
             _parse_did_web("did:key:zabc")
 
@@ -937,12 +975,14 @@ class TestDecodeMultibase:
     def test_invalid_prefix(self):
         """Non-'z' prefix returns None."""
         from seal.federation import _decode_multibase_key
+
         assert _decode_multibase_key("x12345") is None
         assert _decode_multibase_key("") is None
 
     def test_valid_ed25519_key(self):
         """Valid z-base58btc with Ed25519 multicodec returns key bytes."""
         from seal.federation import _decode_multibase_key
+
         # Build: 0xED + 32-byte test key → base58btc
         test_key = bytes(range(32))
         payload = bytes([0xED]) + test_key
@@ -956,6 +996,7 @@ class TestDecodeMultibase:
     def test_valid_multikey_edge(self):
         """Two-byte Ed25519 varint (0x1301) also works."""
         from seal.federation import _decode_multibase_key
+
         test_key = bytes(range(32))
         payload = bytes([0x01, 0x13]) + test_key  # 2-byte varint
         encoded = _base58btc_encode(payload)
@@ -967,6 +1008,7 @@ class TestDecodeMultibase:
     def test_wrong_multicodec(self):
         """Non-Ed25519 multicodec returns None."""
         from seal.federation import _decode_multibase_key
+
         payload = bytes([0x01]) + bytes(range(32))  # 0x01 = unknown
         encoded = _base58btc_encode(payload)
         result = _decode_multibase_key(f"z{encoded}")
@@ -975,6 +1017,7 @@ class TestDecodeMultibase:
     def test_wrong_key_length(self):
         """Wrong key length after stripping multicodec returns None."""
         from seal.federation import _decode_multibase_key
+
         # 0xED + 31 bytes (too short)
         payload = bytes([0xED]) + bytes(range(31))
         encoded = _base58btc_encode(payload)
@@ -986,6 +1029,7 @@ class TestExtractEd25519FromDIDDocument:
     def test_ed25519_verification_key_2018(self):
         """Ed25519VerificationKey2018 with publicKeyMultibase is extracted."""
         from seal.federation import _extract_ed25519_from_did_document
+
         test_key = bytes(range(32))
         payload = bytes([0xED]) + test_key
         encoded = _base58btc_encode(payload)
@@ -1007,6 +1051,7 @@ class TestExtractEd25519FromDIDDocument:
     def test_multikey_type(self):
         """Multikey type with Ed25519 multicodec is extracted."""
         from seal.federation import _extract_ed25519_from_did_document
+
         test_key = bytes(range(32))
         payload = bytes([0xED]) + test_key
         encoded = _base58btc_encode(payload)
@@ -1028,18 +1073,21 @@ class TestExtractEd25519FromDIDDocument:
     def test_missing_verification_method(self):
         """Missing verificationMethod returns None."""
         from seal.federation import _extract_ed25519_from_did_document
+
         doc = {"id": "did:web:example.com"}
         assert _extract_ed25519_from_did_document(doc) is None
 
     def test_empty_verification_method(self):
         """Empty verificationMethod array returns None."""
         from seal.federation import _extract_ed25519_from_did_document
+
         doc = {"id": "did:web:example.com", "verificationMethod": []}
         assert _extract_ed25519_from_did_document(doc) is None
 
     def test_controller_filter(self):
         """expected_did filters verificationMethods by controller."""
         from seal.federation import _extract_ed25519_from_did_document
+
         key_alice = bytes([0] * 31 + [1])
         key_bob = bytes([0] * 31 + [2])
 
@@ -1076,6 +1124,7 @@ class TestExtractEd25519FromDIDDocument:
     def test_unsupported_key_type_skipped(self):
         """Unsupported key types (e.g. RSA) are skipped; next key tried."""
         from seal.federation import _extract_ed25519_from_did_document
+
         test_key = bytes(range(32))
         payload = bytes([0xED]) + test_key
         encoded = _base58btc_encode(payload)
@@ -1102,8 +1151,9 @@ class TestExtractEd25519FromDIDDocument:
 
     def test_public_key_jwk_fallback(self):
         """publicKeyJwk with Ed25519 curve is decoded via base64url."""
-        from seal.federation import _extract_ed25519_from_did_document
         import base64
+
+        from seal.federation import _extract_ed25519_from_did_document
 
         test_key = bytes(range(32))
         x_encoded = base64.urlsafe_b64encode(test_key).decode("ascii").rstrip("=")
@@ -1130,26 +1180,30 @@ class TestExtractEd25519FromDIDDocument:
 class TestResolveViaDIDDocument:
     def test_unsupported_method_raises(self):
         """Unsupported DID method raises FederationError."""
-        from seal.federation import resolve_via_did_document, FederationError
+        from seal.federation import FederationError, resolve_via_did_document
+
         with pytest.raises(FederationError, match="Unsupported DID method"):
             resolve_via_did_document("did:key:zabc")
 
     def test_did_web_malformed_raises(self):
         """Malformed did:web URI raises FederationError."""
-        from seal.federation import resolve_via_did_document, FederationError
+        from seal.federation import FederationError, resolve_via_did_document
+
         with pytest.raises(FederationError, match="Empty domain"):
             resolve_via_did_document("did:web:")
 
     def test_did_ion_malformed_raises(self):
         """Malformed did:ion URI raises FederationError."""
-        from seal.federation import resolve_via_did_document, FederationError
+        from seal.federation import FederationError, resolve_via_did_document
+
         with pytest.raises(FederationError, match="Empty suffix"):
             resolve_via_did_document("did:ion:")
 
     def test_fetch_json_https_network_error_raises(self, monkeypatch):
         """Network error in _fetch_json_https raises FederationError."""
-        from seal.federation import _fetch_json_https, FederationError
         import urllib.error
+
+        from seal.federation import FederationError, _fetch_json_https
 
         def mock_urlopen(*args, **kwargs):
             raise urllib.error.URLError("Network unreachable")
@@ -1160,13 +1214,12 @@ class TestResolveViaDIDDocument:
 
     def test_fetch_json_https_http_error_raises(self, monkeypatch):
         """HTTP error in _fetch_json_https raises FederationError."""
-        from seal.federation import _fetch_json_https, FederationError
         import urllib.error
 
+        from seal.federation import FederationError, _fetch_json_https
+
         def mock_urlopen(*args, **kwargs):
-            raise urllib.error.HTTPError(
-                "https://example.com/did.json", 404, "Not Found", {}, None
-            )
+            raise urllib.error.HTTPError("https://example.com/did.json", 404, "Not Found", {}, None)
 
         monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
         with pytest.raises(FederationError, match="HTTP 404"):
@@ -1174,7 +1227,7 @@ class TestResolveViaDIDDocument:
 
     def test_fetch_json_https_bad_json_raises(self, monkeypatch):
         """Malformed JSON response raises FederationError."""
-        from seal.federation import _fetch_json_https, FederationError
+        from seal.federation import FederationError, _fetch_json_https
 
         class MockResponse:
             status = 200
@@ -1192,7 +1245,7 @@ class TestResolveViaDIDDocument:
 
     def test_fetch_json_https_non_dict_raises(self, monkeypatch):
         """JSON array (not object) raises FederationError."""
-        from seal.federation import _fetch_json_https, FederationError
+        from seal.federation import FederationError, _fetch_json_https
 
         class MockResponse:
             status = 200
@@ -1210,7 +1263,7 @@ class TestResolveViaDIDDocument:
 
     def test_fetch_json_https_empty_body_raises(self, monkeypatch):
         """Empty response body raises FederationError."""
-        from seal.federation import _fetch_json_https, FederationError
+        from seal.federation import FederationError, _fetch_json_https
 
         class MockResponse:
             status = 200
@@ -1229,6 +1282,7 @@ class TestResolveViaDIDDocument:
     def test_parse_did_ion_constructs_url(self):
         """_parse_did_ion constructs correct ION resolver URL."""
         from seal.federation import _parse_did_ion
+
         url = _parse_did_ion("did:ion:EiD9k9f3q5m8w2r7t6y1u4p3a6s8d9f0g1h2j3k4l5z6x7c8v9b0n1m2")
         assert url.startswith("https://discover.did.msidentity.com/1.0/identifiers/")
         assert "EiD9k9f3q5m8w2r7t6y1u4p3a6s8d9f0g1h2j3k4l5z6x7c8v9b0n1m2" in url
@@ -1319,8 +1373,8 @@ class TestExportTrustBundle:
         )
         bundle = json.loads(bundle_str)
 
-        from seal.federation import _canonical_trust_bundle
         from seal._base import _load_public_key
+        from seal.federation import _canonical_trust_bundle
 
         pk_hex = bundle["exporter_public_key_hex"]
         pk = _load_public_key(bytes.fromhex(pk_hex))
@@ -1445,9 +1499,7 @@ class TestImportTrustBundle:
         )
 
         with pytest.raises(FederationError, match="Untrusted exporter"):
-            import_trust_bundle(
-                bundle_str, tmp_registry, trusted_exporter_ids={"agent:bob"}
-            )
+            import_trust_bundle(bundle_str, tmp_registry, trusted_exporter_ids={"agent:bob"})
 
     def test_import_missing_exporter_id_raises(self, populated_registry, alice_keys, tmp_registry):
         """Bundle without exporter_agent_id raises FederationError."""
@@ -1511,8 +1563,8 @@ class TestImportTrustBundle:
             },
         }
         # Sign it properly
-        from seal.federation import _canonical_trust_bundle
         from seal._base import _load_private_key
+        from seal.federation import _canonical_trust_bundle
 
         sk = _load_private_key(alice_keys["private_key"])
         canon = _canonical_trust_bundle(bundle)
@@ -1543,6 +1595,7 @@ class TestTrustBundleRoundtrip:
 
         try:
             from seal.federation import TrustAnchorRegistry
+
             target_registry = TrustAnchorRegistry(path=target_path)
 
             # Import
@@ -1555,6 +1608,7 @@ class TestTrustBundleRoundtrip:
             assert target_registry.lookup("agent:bob") == populated_registry.lookup("agent:bob")
         finally:
             import os
+
             try:
                 os.unlink(target_path)
             except OSError:
@@ -1578,6 +1632,7 @@ class TestTrustBundleRoundtrip:
 
         try:
             from seal.federation import TrustAnchorRegistry
+
             bobs_registry = TrustAnchorRegistry(path=target_path)
 
             result = import_trust_bundle(
@@ -1590,6 +1645,7 @@ class TestTrustBundleRoundtrip:
             assert bobs_registry.lookup("agent:alice") == populated_registry.lookup("agent:alice")
         finally:
             import os
+
             try:
                 os.unlink(target_path)
             except OSError:
@@ -1629,11 +1685,7 @@ class MockDNSSocket:
         answers = b""
         for txt in txt_records:
             rdata = _make_txt_rdata(txt)
-            answers += (
-                b"\xc0\x0c"
-                + struct.pack("!HHIH", 16, 1, ttl, len(rdata))
-                + rdata
-            )
+            answers += b"\xc0\x0c" + struct.pack("!HHIH", 16, 1, ttl, len(rdata)) + rdata
         actual_ancount = len(txt_records)
         header = _make_dns_header(
             query_id=query_id,
@@ -1658,8 +1710,7 @@ class MockDNSSocket:
 
     def recvfrom(self, bufsize: int) -> tuple[bytes, tuple]:
         if self._should_timeout:
-            import socket as _socket
-            raise _socket.timeout("timed out")
+            raise TimeoutError("timed out")
         return self._response_data[:bufsize], ("127.0.0.1", 53)
 
     def close(self):
@@ -1690,9 +1741,7 @@ class TestIntegrationDNSStub:
 
     def test_dns_stub_returns_txt(self, mock_dns_socket):
         """The DNS stub returns configured TXT records when queried."""
-        mock_dns_socket.set_response_txt(
-            "_vpe.test.agent.example", ["vpe-key=" + "ab" * 32]
-        )
+        mock_dns_socket.set_response_txt("_vpe.test.agent.example", ["vpe-key=" + "ab" * 32])
         from seal.federation import _send_dns_query
 
         records = _send_dns_query("test.agent.example")
@@ -1723,9 +1772,7 @@ class TestIntegrationDNSStub:
     def test_dns_stub_resolve_via_dns_full_path(self, mock_dns_socket, alice_keys):
         """resolve_via_dns returns correct key bytes when stub has vpe-key TXT."""
         pk_hex = alice_keys["public_key"].hex()
-        mock_dns_socket.set_response_txt(
-            "_vpe.alice.internal.corp", [f"vpe-key={pk_hex}"]
-        )
+        mock_dns_socket.set_response_txt("_vpe.alice.internal.corp", [f"vpe-key={pk_hex}"])
         key = resolve_via_dns("alice.internal.corp")
         assert key == alice_keys["public_key"]
 
@@ -1750,9 +1797,7 @@ class TestIntegrationDNSFullChain:
     def test_dns_discover_sign_verify(self, mock_dns_socket, alice_keys):
         """DNS-discovered key can verify a federated signature."""
         pk_hex = alice_keys["public_key"].hex()
-        mock_dns_socket.set_response_txt(
-            "_vpe.alice.vault.corp", [f"vpe-key={pk_hex}"]
-        )
+        mock_dns_socket.set_response_txt("_vpe.alice.vault.corp", [f"vpe-key={pk_hex}"])
         signed = vpe_federated_sign(
             prompt="release: deploy v3.2 to staging",
             issuer="agent:alice",
@@ -1761,18 +1806,14 @@ class TestIntegrationDNSFullChain:
         )
         assert signed.error == ""
 
-        result = vpe_federated_verify(
-            signed.envelope, dns_domain="alice.vault.corp"
-        )
+        result = vpe_federated_verify(signed.envelope, dns_domain="alice.vault.corp")
         assert result["valid"] is True
         assert result["source"] == "dns"
 
     def test_dns_chain_reject_tampered(self, mock_dns_socket, alice_keys):
         """After DNS discovery, a tampered envelope is rejected."""
         pk_hex = alice_keys["public_key"].hex()
-        mock_dns_socket.set_response_txt(
-            "_vpe.alice.vault.corp", [f"vpe-key={pk_hex}"]
-        )
+        mock_dns_socket.set_response_txt("_vpe.alice.vault.corp", [f"vpe-key={pk_hex}"])
         signed = vpe_federated_sign(
             prompt="release: deploy to prod",
             issuer="agent:alice",
@@ -1790,18 +1831,14 @@ class TestIntegrationDNSFullChain:
     def test_dns_chain_wrong_key_rejected(self, mock_dns_socket, alice_keys, bob_keys):
         """DNS returns wrong key -> signature verification fails."""
         bob_hex = bob_keys["public_key"].hex()
-        mock_dns_socket.set_response_txt(
-            "_vpe.alice.vault.corp", [f"vpe-key={bob_hex}"]
-        )
+        mock_dns_socket.set_response_txt("_vpe.alice.vault.corp", [f"vpe-key={bob_hex}"])
         signed = vpe_federated_sign(
             prompt="transfer funds",
             issuer="agent:alice",
             audience="agent:bob",
             private_key=alice_keys["private_key"],
         )
-        result = vpe_federated_verify(
-            signed.envelope, dns_domain="alice.vault.corp"
-        )
+        result = vpe_federated_verify(signed.envelope, dns_domain="alice.vault.corp")
         assert result["valid"] is False
         assert "signature_mismatch" in result.get("reason", "")
 
@@ -1814,9 +1851,7 @@ class TestIntegrationDNSFullChain:
             audience="agent:bob",
             private_key=alice_keys["private_key"],
         )
-        result = vpe_federated_verify(
-            signed.envelope, dns_domain="unknown.vault.corp"
-        )
+        result = vpe_federated_verify(signed.envelope, dns_domain="unknown.vault.corp")
         assert result["valid"] is False
         assert "unknown_issuer" in result.get("reason", "")
 
@@ -1825,43 +1860,27 @@ class TestIntegrationDNSFullChain:
         from seal.audit import AuditLog
 
         pk_hex = alice_keys["public_key"].hex()
-        mock_dns_socket.set_response_txt(
-            "_vpe.alice.vault.corp", [f"vpe-key={pk_hex}"]
-        )
-        audit = FederationAuditLog(
-            audit=AuditLog(
-                path=tmp_registry.path.replace(".json", "_dns_audit.jsonl")
-            )
-        )
+        mock_dns_socket.set_response_txt("_vpe.alice.vault.corp", [f"vpe-key={pk_hex}"])
+        audit = FederationAuditLog(audit=AuditLog(path=tmp_registry.path.replace(".json", "_dns_audit.jsonl")))
         signed = vpe_federated_sign(
             prompt="audited DNS operation",
             issuer="agent:alice",
             audience="agent:bob",
             private_key=alice_keys["private_key"],
         )
-        result = vpe_federated_verify(
-            signed.envelope, dns_domain="alice.vault.corp", audit_log=audit
-        )
+        result = vpe_federated_verify(signed.envelope, dns_domain="alice.vault.corp", audit_log=audit)
         assert result["valid"] is True
 
         entries = audit.audit.query()
-        dns_sourced = [
-            e
-            for e in entries
-            if e.get("event") == "vpe_cross_audit" and e.get("source") == "dns"
-        ]
+        dns_sourced = [e for e in entries if e.get("event") == "vpe_cross_audit" and e.get("source") == "dns"]
         assert len(dns_sourced) >= 1
 
-    def test_dns_resolution_order_respected(
-        self, mock_dns_socket, alice_keys, populated_registry
-    ):
+    def test_dns_resolution_order_respected(self, mock_dns_socket, alice_keys, populated_registry):
         """Registry lookup takes priority over DNS even when both are available."""
         import os
 
         wrong_pk = os.urandom(32)
-        mock_dns_socket.set_response_txt(
-            "_vpe.alice.vault.corp", [f"vpe-key={wrong_pk.hex()}"]
-        )
+        mock_dns_socket.set_response_txt("_vpe.alice.vault.corp", [f"vpe-key={wrong_pk.hex()}"])
         signed = vpe_federated_sign(
             prompt="priority test",
             issuer="agent:alice",
@@ -1894,9 +1913,7 @@ class TestIntegrationDNSTimeout:
         key = resolve_via_dns("timeout.test.example")
         assert key is None
 
-    def test_dns_timeout_federated_verify_graceful(
-        self, mock_dns_socket, alice_keys
-    ):
+    def test_dns_timeout_federated_verify_graceful(self, mock_dns_socket, alice_keys):
         """Federated verify with timing-out DNS returns unknown_issuer."""
         mock_dns_socket.enable_timeout()
         signed = vpe_federated_sign(
@@ -1905,26 +1922,29 @@ class TestIntegrationDNSTimeout:
             audience="agent:bob",
             private_key=alice_keys["private_key"],
         )
-        result = vpe_federated_verify(
-            signed.envelope, dns_domain="alice.vault.corp"
-        )
+        result = vpe_federated_verify(signed.envelope, dns_domain="alice.vault.corp")
         assert result["valid"] is False
         assert "unknown_issuer" in result.get("reason", "")
 
     def test_dns_socket_error_graceful(self, monkeypatch):
         """A socket error during DNS returns [] from _resolve_dns_txt."""
-        from seal import federation as fed_module
         import socket as socket_module
+
+        from seal import federation as fed_module
 
         class BrokenSocket:
             def __init__(self, family, sock_type):
                 pass
+
             def settimeout(self, v):
                 pass
+
             def sendto(self, d, a):
                 raise OSError("Network unreachable")
+
             def recvfrom(self, s):
                 return b"", ("", 0)
+
             def close(self):
                 pass
 
@@ -1989,22 +2009,25 @@ class TestIntegrationDIDDocumentFetch:
 
     def test_did_doc_invalid_key_type_returns_none(self, monkeypatch):
         """DID document with only unsupported key types returns None."""
+
         class MockResponse:
             status = 200
             headers = {"Content-Type": "application/did+json"}
 
             def read(self):
-                return json.dumps({
-                    "id": "did:web:rsa.example.com",
-                    "verificationMethod": [
-                        {
-                            "id": "did:web:rsa.example.com#rsa-key",
-                            "type": "RsaVerificationKey2018",
-                            "controller": "did:web:rsa.example.com",
-                            "publicKeyPem": "-----BEGIN PUBLIC KEY-----...",
-                        }
-                    ],
-                }).encode("utf-8")
+                return json.dumps(
+                    {
+                        "id": "did:web:rsa.example.com",
+                        "verificationMethod": [
+                            {
+                                "id": "did:web:rsa.example.com#rsa-key",
+                                "type": "RsaVerificationKey2018",
+                                "controller": "did:web:rsa.example.com",
+                                "publicKeyPem": "-----BEGIN PUBLIC KEY-----...",
+                            }
+                        ],
+                    }
+                ).encode("utf-8")
 
         def mock_urlopen(*args, **kwargs):
             return MockResponse()
@@ -2014,8 +2037,9 @@ class TestIntegrationDIDDocumentFetch:
 
     def test_did_doc_network_fallback_graceful(self, monkeypatch):
         """Network error in DID document resolution raises FederationError."""
-        from seal.federation import FederationError
         import urllib.error
+
+        from seal.federation import FederationError
 
         def mock_urlopen(*args, **kwargs):
             raise urllib.error.URLError("Connection refused")
@@ -2033,21 +2057,24 @@ class TestIntegrationDIDDocumentFetch:
         class MockResponse:
             status = 200
             headers = {"Content-Type": "application/json"}
+
             def read(self):
-                return json.dumps({
-                    "id": "did:ion:EiABCD",
-                    "didDocument": {
+                return json.dumps(
+                    {
                         "id": "did:ion:EiABCD",
-                        "verificationMethod": [
-                            {
-                                "id": "did:ion:EiABCD#key-1",
-                                "type": "Ed25519VerificationKey2018",
-                                "controller": "did:ion:EiABCD",
-                                "publicKeyMultibase": f"z{encoded}",
-                            }
-                        ],
-                    },
-                }).encode("utf-8")
+                        "didDocument": {
+                            "id": "did:ion:EiABCD",
+                            "verificationMethod": [
+                                {
+                                    "id": "did:ion:EiABCD#key-1",
+                                    "type": "Ed25519VerificationKey2018",
+                                    "controller": "did:ion:EiABCD",
+                                    "publicKeyMultibase": f"z{encoded}",
+                                }
+                            ],
+                        },
+                    }
+                ).encode("utf-8")
 
         def mock_urlopen(*args, **kwargs):
             return MockResponse()
@@ -2062,6 +2089,7 @@ class TestIntegrationDIDDocumentFetch:
         class MockResponse:
             status = 200
             headers = {"Content-Type": "application/json"}
+
             def read(self):
                 return b""
 
@@ -2076,12 +2104,10 @@ class TestIntegrationDIDDocumentFetch:
 class TestIntegrationTrustBundleCycle:
     """Trust bundle export -> import -> sign-verify cycle tests (AC5)."""
 
-    def test_export_reimport_sign_verify(
-        self, populated_registry, alice_keys, bob_keys
-    ):
+    def test_export_reimport_sign_verify(self, populated_registry, alice_keys, bob_keys):
         """Export bundle -> import to new registry -> federated sign/verify works."""
-        import tempfile
         import os as _os
+        import tempfile
 
         bundle_str = export_trust_bundle(
             populated_registry,
@@ -2103,9 +2129,7 @@ class TestIntegrationTrustBundleCycle:
                 audience="agent:bob",
                 private_key=alice_keys["private_key"],
             )
-            verify_result = vpe_federated_verify(
-                signed.envelope, registry=new_registry
-            )
+            verify_result = vpe_federated_verify(signed.envelope, registry=new_registry)
             assert verify_result["valid"] is True
             assert verify_result["source"] == "registry"
         finally:
@@ -2114,9 +2138,7 @@ class TestIntegrationTrustBundleCycle:
             except OSError:
                 pass
 
-    def test_cycle_tampered_export_rejected(
-        self, populated_registry, alice_keys, tmp_registry
-    ):
+    def test_cycle_tampered_export_rejected(self, populated_registry, alice_keys, tmp_registry):
         """Tampered bundle between export and import is rejected on import."""
         from seal.federation import FederationError
 
@@ -2128,17 +2150,13 @@ class TestIntegrationTrustBundleCycle:
         bundle = json.loads(bundle_str)
         bundle["anchors"]["agent:alice"] = "ff" * 32
         tampered = json.dumps(bundle, separators=(",", ":"))
-        with pytest.raises(
-            FederationError, match="signature verification failed|signature mismatch"
-        ):
+        with pytest.raises(FederationError, match="signature verification failed|signature mismatch"):
             import_trust_bundle(tampered, tmp_registry)
 
-    def test_cycle_multiple_imports_accumulate(
-        self, populated_registry, alice_keys, bob_keys
-    ):
+    def test_cycle_multiple_imports_accumulate(self, populated_registry, alice_keys, bob_keys):
         """Multiple imports into the same registry accumulate anchors."""
-        import tempfile
         import os as _os
+        import tempfile
 
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
             f.write("{}\n")
@@ -2169,12 +2187,10 @@ class TestIntegrationTrustBundleCycle:
             except OSError:
                 pass
 
-    def test_cycle_sign_with_imported_verify_with_original(
-        self, populated_registry, alice_keys, bob_keys
-    ):
+    def test_cycle_sign_with_imported_verify_with_original(self, populated_registry, alice_keys, bob_keys):
         """Sign using imported reg, verify using original reg (cross-registry exchange)."""
-        import tempfile
         import os as _os
+        import tempfile
 
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
             f.write("{}\n")
@@ -2194,9 +2210,7 @@ class TestIntegrationTrustBundleCycle:
                 audience="agent:alice",
                 private_key=bob_keys["private_key"],
             )
-            result = vpe_federated_verify(
-                signed.envelope, registry=populated_registry
-            )
+            result = vpe_federated_verify(signed.envelope, registry=populated_registry)
             assert result["valid"] is True
         finally:
             try:
@@ -2206,8 +2220,8 @@ class TestIntegrationTrustBundleCycle:
 
     def test_cycle_empty_import_idempotent(self, alice_keys, tmp_registry):
         """Importing a bundle with zero valid anchors does not corrupt registry."""
-        from seal.federation import _canonical_trust_bundle
         from seal._base import _load_private_key
+        from seal.federation import _canonical_trust_bundle
 
         bundle = {
             "vpe_trust_bundle": "1",

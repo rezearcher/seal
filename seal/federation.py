@@ -332,9 +332,7 @@ def _parse_name(data: bytes, offset: int) -> tuple[str, int]:
         else:
             if current + 1 + length > len(data):
                 raise FederationError("Truncated DNS label in name")
-            label = data[current + 1 : current + 1 + length].decode(
-                "ascii", errors="replace"
-            )
+            label = data[current + 1 : current + 1 + length].decode("ascii", errors="replace")
             labels.append(label)
             current += 1 + length
             if not jumped:
@@ -367,14 +365,10 @@ def _parse_dns_response(data: bytes, expected_id: int) -> list[str]:
     if len(data) < 12:
         raise FederationError("DNS response too short")
 
-    resp_id, flags, qdcount, ancount, nscount, arcount = struct.unpack(
-        "!HHHHHH", data[:12]
-    )
+    resp_id, flags, qdcount, ancount, nscount, arcount = struct.unpack("!HHHHHH", data[:12])
 
     if resp_id != expected_id:
-        raise FederationError(
-            f"DNS response ID mismatch: {resp_id} != {expected_id}"
-        )
+        raise FederationError(f"DNS response ID mismatch: {resp_id} != {expected_id}")
 
     if not (flags & _DNS_QR_RESPONSE):
         raise FederationError("Not a DNS response (QR bit not set)")
@@ -406,17 +400,12 @@ def _parse_dns_response(data: bytes, expected_id: int) -> list[str]:
         if offset + 10 > len(data):
             raise FederationError("Truncated DNS answer header")
 
-        atype, aclass, attl, rdlength = struct.unpack(
-            "!HHIH", data[offset : offset + 10]
-        )
+        atype, aclass, attl, rdlength = struct.unpack("!HHIH", data[offset : offset + 10])
         _ = attl  # TTL is available but unused here
         offset += 10
 
         if offset + rdlength > len(data):
-            raise FederationError(
-                f"Truncated DNS RDATA: declared {rdlength} bytes, "
-                f"{len(data) - offset} available"
-            )
+            raise FederationError(f"Truncated DNS RDATA: declared {rdlength} bytes, {len(data) - offset} available")
 
         # Only extract TXT records (type 16) of class IN (1)
         if atype == _DNS_TYPE_TXT and aclass == _DNS_CLASS_IN:
@@ -436,9 +425,7 @@ def _parse_dns_response(data: bytes, expected_id: int) -> list[str]:
     return records
 
 
-def _send_dns_query(
-    domain: str, resolver: str | None = None
-) -> list[str]:
+def _send_dns_query(domain: str, resolver: str | None = None) -> list[str]:
     """Send a DNS TXT query over UDP and return the parsed records.
 
     Implements retry logic: up to ``_DNS_RETRIES`` attempts on
@@ -472,7 +459,7 @@ def _send_dns_query(
 
             response_data, _ = sock.recvfrom(4096)
             return _parse_dns_response(response_data, query_id)
-        except socket.timeout:
+        except TimeoutError:
             last_error = f"DNS timeout after {_DNS_TIMEOUT}s (attempt {attempt + 1}/{_DNS_RETRIES})"
         except OSError as exc:
             last_error = f"DNS socket error: {exc}"
@@ -514,7 +501,7 @@ def resolve_via_dns(agent_domain: str) -> bytes | None:
 
     Example DNS TXT record::
 
-        _vpe.alice.internal.corp.com. 300 IN TXT "vpe-key=abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+        _vpe.alice.internal.corp.com. 300 IN TXT "vpe-key=0123456789abcdef0123456789abcdef0123456789"
 
     Args:
         agent_domain: Domain name of the target agent
@@ -634,7 +621,7 @@ def _parse_did_web(did: str) -> str:
     if not did.startswith("did:web:"):
         raise FederationError(f"Expected did:web: prefix, got {did!r}")
 
-    rest = did[len("did:web:"):]
+    rest = did[len("did:web:") :]
     if not rest:
         raise FederationError("Empty domain in did:web URI")
 
@@ -677,7 +664,7 @@ def _parse_did_ion(did: str, resolver_base: str | None = None) -> str:
 
     # ION uses a short-form identifier after did:ion:
     # did:ion:<suffix> where suffix is the hash of the initial state
-    suffix = did[len("did:ion:"):]
+    suffix = did[len("did:ion:") :]
     if not suffix:
         raise FederationError("Empty suffix in did:ion URI")
 
@@ -699,8 +686,8 @@ def _fetch_json_https(url: str, timeout_read: int = 10, timeout_connect: int = 5
     Raises:
         FederationError: On network errors or non-200 responses.
     """
-    import urllib.request as _urllib_request
     import urllib.error as _urllib_error
+    import urllib.request as _urllib_request
 
     try:
         req = _urllib_request.Request(url, method="GET")
@@ -716,11 +703,8 @@ def _fetch_json_https(url: str, timeout_read: int = 10, timeout_connect: int = 5
         # We use the combined timeout for simplicity.
 
         if response.status != 200:
-            raise FederationError(
-                f"HTTP {response.status} fetching DID document from {url}"
-            )
+            raise FederationError(f"HTTP {response.status} fetching DID document from {url}")
 
-        content_type = response.headers.get("Content-Type", "")
         body = response.read()
         if not body:
             raise FederationError(f"Empty response body from {url}")
@@ -731,25 +715,15 @@ def _fetch_json_https(url: str, timeout_read: int = 10, timeout_connect: int = 5
         return data
 
     except _urllib_error.HTTPError as exc:
-        raise FederationError(
-            f"HTTP {exc.code} fetching DID document from {url}"
-        ) from exc
+        raise FederationError(f"HTTP {exc.code} fetching DID document from {url}") from exc
     except _urllib_error.URLError as exc:
-        raise FederationError(
-            f"URL error fetching DID document from {url}: {exc.reason}"
-        ) from exc
+        raise FederationError(f"URL error fetching DID document from {url}: {exc.reason}") from exc
     except OSError as exc:
-        raise FederationError(
-            f"Network error fetching DID document from {url}: {exc}"
-        ) from exc
+        raise FederationError(f"Network error fetching DID document from {url}: {exc}") from exc
     except json.JSONDecodeError as exc:
-        raise FederationError(
-            f"Malformed JSON in DID document from {url}: {exc}"
-        ) from exc
+        raise FederationError(f"Malformed JSON in DID document from {url}: {exc}") from exc
     except UnicodeDecodeError as exc:
-        raise FederationError(
-            f"Non-UTF-8 response body from {url}: {exc}"
-        ) from exc
+        raise FederationError(f"Non-UTF-8 response body from {url}: {exc}") from exc
 
 
 def _extract_ed25519_from_did_document(doc: dict, expected_did: str = "") -> bytes | None:
@@ -927,9 +901,7 @@ def resolve_via_did_document(
         return key
 
     else:
-        raise FederationError(
-            f"Unsupported DID method: {did!r} — supported methods: did:web:, did:ion:"
-        )
+        raise FederationError(f"Unsupported DID method: {did!r} — supported methods: did:web:, did:ion:")
 
 
 # ---------------------------------------------------------------------------
@@ -952,14 +924,14 @@ def _canonical_trust_bundle(bundle: dict) -> bytes:
     lexicographically. Missing fields default to empty string or empty dict.
     """
     ordered: dict[str, object] = OrderedDict()
-    for field in _TRUST_BUNDLE_FIELDS:
-        if field == "anchors":
+    for bundle_field in _TRUST_BUNDLE_FIELDS:
+        if bundle_field == "anchors":
             value = bundle.get("anchors", {})
             if isinstance(value, dict):
                 value = OrderedDict(sorted(value.items()))
-            ordered[field] = value
+            ordered[bundle_field] = value
         else:
-            ordered[field] = bundle.get(field, "")
+            ordered[bundle_field] = bundle.get(bundle_field, "")
     return json.dumps(ordered, separators=(",", ":")).encode("utf-8")
 
 
@@ -990,9 +962,7 @@ def export_trust_bundle(
     """
     anchors = registry.list_anchors()
     if not anchors:
-        raise FederationError(
-            "Cannot export trust bundle: no trust anchors registered"
-        )
+        raise FederationError("Cannot export trust bundle: no trust anchors registered")
 
     # Derive public key from the private key for bundle verification
     sk = _load_private_key(private_key)
@@ -1004,9 +974,7 @@ def export_trust_bundle(
 
     bundle: dict[str, object] = {
         "vpe_trust_bundle": "1",
-        "exported_at": _datetime.datetime.now(_datetime.timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        ),
+        "exported_at": _datetime.datetime.now(_datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "exporter_agent_id": exporter_agent_id,
         "exporter_public_key_hex": pk_bytes.hex(),
         "anchors": dict(anchors),
@@ -1055,9 +1023,7 @@ def import_trust_bundle(
     # Check version
     version = bundle.get("vpe_trust_bundle", "")
     if version != "1":
-        raise FederationError(
-            f"Unsupported trust bundle version: {version!r} — expected '1'"
-        )
+        raise FederationError(f"Unsupported trust bundle version: {version!r} — expected '1'")
 
     exporter_id = bundle.get("exporter_agent_id", "")
     if not exporter_id:
@@ -1070,13 +1036,9 @@ def import_trust_bundle(
     try:
         pk_bytes = bytes.fromhex(pk_hex)
         if len(pk_bytes) != 32:
-            raise FederationError(
-                f"Invalid public key length in bundle: {len(pk_bytes)} bytes, expected 32"
-            )
+            raise FederationError(f"Invalid public key length in bundle: {len(pk_bytes)} bytes, expected 32")
     except ValueError as exc:
-        raise FederationError(
-            f"Invalid exporter_public_key_hex (not valid hex): {exc}"
-        ) from exc
+        raise FederationError(f"Invalid exporter_public_key_hex (not valid hex): {exc}") from exc
 
     sig_hex = bundle.get("signature", "")
     if not sig_hex:
@@ -1084,15 +1046,11 @@ def import_trust_bundle(
     try:
         sig_bytes = bytes.fromhex(sig_hex)
     except ValueError as exc:
-        raise FederationError(
-            f"Invalid signature (not valid hex): {exc}"
-        ) from exc
+        raise FederationError(f"Invalid signature (not valid hex): {exc}") from exc
 
     # Check trusted exporter
     if trusted_exporter_ids is not None and exporter_id not in trusted_exporter_ids:
-        raise FederationError(
-            f"Untrusted exporter: {exporter_id!r} — not in trusted_exporter_ids"
-        )
+        raise FederationError(f"Untrusted exporter: {exporter_id!r} — not in trusted_exporter_ids")
 
     # Verify signature
     try:
