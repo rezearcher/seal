@@ -891,3 +891,345 @@ class TestDNSSendQuery:
                 pass
             else:
                 raise
+
+
+# ---------------------------------------------------------------------------
+# DID document resolution (did:web / did:ion)
+# ---------------------------------------------------------------------------
+
+
+class TestParseDIDWeb:
+    def test_bare_domain(self):
+        """did:web:example.com → https://example.com/.well-known/did.json"""
+        from seal.federation import _parse_did_web
+        url = _parse_did_web("did:web:example.com")
+        assert url == "https://example.com/.well-known/did.json"
+
+    def test_with_path(self):
+        """did:web:example.com:path:to:file → https://example.com/path/to/file/did.json"""
+        from seal.federation import _parse_did_web
+        url = _parse_did_web("did:web:example.com:path:to:file")
+        assert url == "https://example.com/path/to/file/did.json"
+
+    def test_ip_address_domain(self):
+        """did:web:192.168.1.1 works as bare domain."""
+        from seal.federation import _parse_did_web
+        url = _parse_did_web("did:web:192.168.1.1")
+        assert url == "https://192.168.1.1/.well-known/did.json"
+
+    def test_empty_domain_raises(self):
+        """Empty domain raises FederationError."""
+        from seal.federation import _parse_did_web, FederationError
+        with pytest.raises(FederationError, match="Empty domain"):
+            _parse_did_web("did:web:")
+        with pytest.raises(FederationError, match="Empty domain"):
+            _parse_did_web("did:web::path")
+
+    def test_wrong_prefix_raises(self):
+        """Non-did:web prefix raises FederationError."""
+        from seal.federation import _parse_did_web, FederationError
+        with pytest.raises(FederationError, match="Expected did:web"):
+            _parse_did_web("did:key:zabc")
+
+
+class TestDecodeMultibase:
+    def test_invalid_prefix(self):
+        """Non-'z' prefix returns None."""
+        from seal.federation import _decode_multibase_key
+        assert _decode_multibase_key("x12345") is None
+        assert _decode_multibase_key("") is None
+
+    def test_valid_ed25519_key(self):
+        """Valid z-base58btc with Ed25519 multicodec returns key bytes."""
+        from seal.federation import _decode_multibase_key
+        # Build: 0xED + 32-byte test key → base58btc
+        test_key = bytes(range(32))
+        payload = bytes([0xED]) + test_key
+        encoded = _base58btc_encode(payload)
+        multibase = f"z{encoded}"
+
+        result = _decode_multibase_key(multibase)
+        assert result == test_key
+        assert len(result) == 32
+
+    def test_valid_multikey_edge(self):
+        """Two-byte Ed25519 varint (0x1301) also works."""
+        from seal.federation import _decode_multibase_key
+        test_key = bytes(range(32))
+        payload = bytes([0x01, 0x13]) + test_key  # 2-byte varint
+        encoded = _base58btc_encode(payload)
+        multibase = f"z{encoded}"
+
+        result = _decode_multibase_key(multibase)
+        assert result == test_key
+
+    def test_wrong_multicodec(self):
+        """Non-Ed25519 multicodec returns None."""
+        from seal.federation import _decode_multibase_key
+        payload = bytes([0x01]) + bytes(range(32))  # 0x01 = unknown
+        encoded = _base58btc_encode(payload)
+        result = _decode_multibase_key(f"z{encoded}")
+        assert result is None
+
+    def test_wrong_key_length(self):
+        """Wrong key length after stripping multicodec returns None."""
+        from seal.federation import _decode_multibase_key
+        # 0xED + 31 bytes (too short)
+        payload = bytes([0xED]) + bytes(range(31))
+        encoded = _base58btc_encode(payload)
+        result = _decode_multibase_key(f"z{encoded}")
+        assert result is None
+
+
+class TestExtractEd25519FromDIDDocument:
+    def test_ed25519_verification_key_2018(self):
+        """Ed25519VerificationKey2018 with publicKeyMultibase is extracted."""
+        from seal.federation import _extract_ed25519_from_did_document
+        test_key = bytes(range(32))
+        payload = bytes([0xED]) + test_key
+        encoded = _base58btc_encode(payload)
+
+        doc = {
+            "id": "did:web:example.com",
+            "verificationMethod": [
+                {
+                    "id": "did:web:example.com#key-1",
+                    "type": "Ed25519VerificationKey2018",
+                    "controller": "did:web:example.com",
+                    "publicKeyMultibase": f"z{encoded}",
+                }
+            ],
+        }
+        result = _extract_ed25519_from_did_document(doc)
+        assert result == test_key
+
+    def test_multikey_type(self):
+        """Multikey type with Ed25519 multicodec is extracted."""
+        from seal.federation import _extract_ed25519_from_did_document
+        test_key = bytes(range(32))
+        payload = bytes([0xED]) + test_key
+        encoded = _base58btc_encode(payload)
+
+        doc = {
+            "id": "did:web:example.com",
+            "verificationMethod": [
+                {
+                    "id": "did:web:example.com#key-1",
+                    "type": "Multikey",
+                    "controller": "did:web:example.com",
+                    "publicKeyMultibase": f"z{encoded}",
+                }
+            ],
+        }
+        result = _extract_ed25519_from_did_document(doc)
+        assert result == test_key
+
+    def test_missing_verification_method(self):
+        """Missing verificationMethod returns None."""
+        from seal.federation import _extract_ed25519_from_did_document
+        doc = {"id": "did:web:example.com"}
+        assert _extract_ed25519_from_did_document(doc) is None
+
+    def test_empty_verification_method(self):
+        """Empty verificationMethod array returns None."""
+        from seal.federation import _extract_ed25519_from_did_document
+        doc = {"id": "did:web:example.com", "verificationMethod": []}
+        assert _extract_ed25519_from_did_document(doc) is None
+
+    def test_controller_filter(self):
+        """expected_did filters verificationMethods by controller."""
+        from seal.federation import _extract_ed25519_from_did_document
+        key_alice = bytes([0] * 31 + [1])
+        key_bob = bytes([0] * 31 + [2])
+
+        def _make_doc(controller, key):
+            payload = bytes([0xED]) + key
+            encoded = _base58btc_encode(payload)
+            return {
+                "id": controller,
+                "type": "Ed25519VerificationKey2018",
+                "controller": controller,
+                "publicKeyMultibase": f"z{encoded}",
+            }
+
+        doc = {
+            "id": "did:web:example.com",
+            "verificationMethod": [
+                _make_doc("did:web:alice.com", key_alice),
+                _make_doc("did:web:bob.com", key_bob),
+            ],
+        }
+
+        # Filter for alice
+        result = _extract_ed25519_from_did_document(doc, expected_did="did:web:alice.com")
+        assert result == key_alice
+
+        # Filter for bob
+        result = _extract_ed25519_from_did_document(doc, expected_did="did:web:bob.com")
+        assert result == key_bob
+
+        # No match
+        result = _extract_ed25519_from_did_document(doc, expected_did="did:web:eve.com")
+        assert result is None
+
+    def test_unsupported_key_type_skipped(self):
+        """Unsupported key types (e.g. RSA) are skipped; next key tried."""
+        from seal.federation import _extract_ed25519_from_did_document
+        test_key = bytes(range(32))
+        payload = bytes([0xED]) + test_key
+        encoded = _base58btc_encode(payload)
+
+        doc = {
+            "id": "did:web:example.com",
+            "verificationMethod": [
+                {
+                    "id": "did:web:example.com#rsa-key",
+                    "type": "RsaVerificationKey2018",
+                    "controller": "did:web:example.com",
+                    "publicKeyPem": "-----BEGIN PUBLIC KEY-----...",
+                },
+                {
+                    "id": "did:web:example.com#ed-key",
+                    "type": "Ed25519VerificationKey2018",
+                    "controller": "did:web:example.com",
+                    "publicKeyMultibase": f"z{encoded}",
+                },
+            ],
+        }
+        result = _extract_ed25519_from_did_document(doc)
+        assert result == test_key  # Falls through to the Ed25519 key
+
+    def test_public_key_jwk_fallback(self):
+        """publicKeyJwk with Ed25519 curve is decoded via base64url."""
+        from seal.federation import _extract_ed25519_from_did_document
+        import base64
+
+        test_key = bytes(range(32))
+        x_encoded = base64.urlsafe_b64encode(test_key).decode("ascii").rstrip("=")
+
+        doc = {
+            "id": "did:web:example.com",
+            "verificationMethod": [
+                {
+                    "id": "did:web:example.com#key-1",
+                    "type": "Ed25519VerificationKey2018",
+                    "controller": "did:web:example.com",
+                    "publicKeyJwk": {
+                        "crv": "Ed25519",
+                        "kty": "OKP",
+                        "x": x_encoded,
+                    },
+                }
+            ],
+        }
+        result = _extract_ed25519_from_did_document(doc)
+        assert result == test_key
+
+
+class TestResolveViaDIDDocument:
+    def test_unsupported_method_raises(self):
+        """Unsupported DID method raises FederationError."""
+        from seal.federation import resolve_via_did_document, FederationError
+        with pytest.raises(FederationError, match="Unsupported DID method"):
+            resolve_via_did_document("did:key:zabc")
+
+    def test_did_web_malformed_raises(self):
+        """Malformed did:web URI raises FederationError."""
+        from seal.federation import resolve_via_did_document, FederationError
+        with pytest.raises(FederationError, match="Empty domain"):
+            resolve_via_did_document("did:web:")
+
+    def test_did_ion_malformed_raises(self):
+        """Malformed did:ion URI raises FederationError."""
+        from seal.federation import resolve_via_did_document, FederationError
+        with pytest.raises(FederationError, match="Empty suffix"):
+            resolve_via_did_document("did:ion:")
+
+    def test_fetch_json_https_network_error_raises(self, monkeypatch):
+        """Network error in _fetch_json_https raises FederationError."""
+        from seal.federation import _fetch_json_https, FederationError
+        import urllib.error
+
+        def mock_urlopen(*args, **kwargs):
+            raise urllib.error.URLError("Network unreachable")
+
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+        with pytest.raises(FederationError, match="Network error|URL error"):
+            _fetch_json_https("https://example.com/did.json")
+
+    def test_fetch_json_https_http_error_raises(self, monkeypatch):
+        """HTTP error in _fetch_json_https raises FederationError."""
+        from seal.federation import _fetch_json_https, FederationError
+        import urllib.error
+
+        def mock_urlopen(*args, **kwargs):
+            raise urllib.error.HTTPError(
+                "https://example.com/did.json", 404, "Not Found", {}, None
+            )
+
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+        with pytest.raises(FederationError, match="HTTP 404"):
+            _fetch_json_https("https://example.com/did.json")
+
+    def test_fetch_json_https_bad_json_raises(self, monkeypatch):
+        """Malformed JSON response raises FederationError."""
+        from seal.federation import _fetch_json_https, FederationError
+        import io
+
+        class MockResponse:
+            status = 200
+            headers = {"Content-Type": "application/json"}
+
+            def read(self):
+                return b"not valid json{{{"
+
+        def mock_urlopen(*args, **kwargs):
+            return MockResponse()
+
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+        with pytest.raises(FederationError, match="Malformed JSON"):
+            _fetch_json_https("https://example.com/did.json")
+
+    def test_fetch_json_https_non_dict_raises(self, monkeypatch):
+        """JSON array (not object) raises FederationError."""
+        from seal.federation import _fetch_json_https, FederationError
+        import io
+
+        class MockResponse:
+            status = 200
+            headers = {"Content-Type": "application/json"}
+
+            def read(self):
+                return b"[1, 2, 3]"
+
+        def mock_urlopen(*args, **kwargs):
+            return MockResponse()
+
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+        with pytest.raises(FederationError, match="Expected JSON object"):
+            _fetch_json_https("https://example.com/did.json")
+
+    def test_fetch_json_https_empty_body_raises(self, monkeypatch):
+        """Empty response body raises FederationError."""
+        from seal.federation import _fetch_json_https, FederationError
+
+        class MockResponse:
+            status = 200
+            headers = {"Content-Type": "application/json"}
+
+            def read(self):
+                return b""
+
+        def mock_urlopen(*args, **kwargs):
+            return MockResponse()
+
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+        with pytest.raises(FederationError, match="Empty response"):
+            _fetch_json_https("https://example.com/did.json")
+
+    def test_parse_did_ion_constructs_url(self):
+        """_parse_did_ion constructs correct ION resolver URL."""
+        from seal.federation import _parse_did_ion
+        url = _parse_did_ion("did:ion:EiD9k9f3q5m8w2r7t6y1u4p3a6s8d9f0g1h2j3k4l5z6x7c8v9b0n1m2")
+        assert url.startswith("https://discover.did.msidentity.com/1.0/identifiers/")
+        assert "EiD9k9f3q5m8w2r7t6y1u4p3a6s8d9f0g1h2j3k4l5z6x7c8v9b0n1m2" in url

@@ -607,6 +607,328 @@ def resolve_via_did(did_str: str) -> bytes | None:
 
 
 # ---------------------------------------------------------------------------
+# DID document resolution via HTTPS (did:web / did:ion)
+# ---------------------------------------------------------------------------
+
+
+def _parse_did_web(did: str) -> str:
+    """Parse a ``did:web`` identifier and return the HTTPS URL for its DID document.
+
+    ``did:web:example.com`` → ``https://example.com/.well-known/did.json``
+
+    ``did:web:example.com:path:to:file`` → ``https://example.com/path/to/file/did.json``
+
+    Args:
+        did: Full DID string starting with ``did:web:``.
+
+    Returns:
+        The HTTPS URL where the DID document is published.
+
+    Raises:
+        FederationError: If the DID is malformed (empty domain, invalid chars).
+    """
+    if not did.startswith("did:web:"):
+        raise FederationError(f"Expected did:web: prefix, got {did!r}")
+
+    rest = did[len("did:web:"):]
+    if not rest:
+        raise FederationError("Empty domain in did:web URI")
+
+    # Split on ':' to map path segments
+    segments = rest.split(":")
+    domain = segments[0]
+    if not domain:
+        raise FederationError("Empty domain in did:web URI")
+
+    if len(segments) == 1:
+        # bare domain → .well-known/did.json
+        return f"https://{domain}/.well-known/did.json"
+    else:
+        # domain:path:to:file → domain/path/to/file/did.json
+        path = "/".join(segments[1:])
+        return f"https://{domain}/{path}/did.json"
+
+
+def _parse_did_ion(did: str, resolver_base: str | None = None) -> str:
+    """Parse a ``did:ion`` identifier and return the ION resolution URL.
+
+    Note: ION resolution goes through a configured ION endpoint (e.g.
+    https://discover.did.msidentity.com/1.0/identifiers/{suffix}).
+    This is a best-effort resolution that depends on network access to a
+    public ION node.
+
+    Args:
+        did: Full DID string starting with ``did:ion:``.
+        resolver_base: Optional custom ION resolver base URL override.
+            Defaults to a public Microsoft ION resolver endpoint.
+
+    Returns:
+        The ION resolution URL.
+
+    Raises:
+        FederationError: If the DID is malformed.
+    """
+    if not did.startswith("did:ion:"):
+        raise FederationError(f"Expected did:ion: prefix, got {did!r}")
+
+    # ION uses a short-form identifier after did:ion:
+    # did:ion:<suffix> where suffix is the hash of the initial state
+    suffix = did[len("did:ion:"):]
+    if not suffix:
+        raise FederationError("Empty suffix in did:ion URI")
+
+    base = resolver_base or "https://discover.did.msidentity.com/1.0/identifiers"
+    return f"{base}/{suffix}"
+
+
+def _fetch_json_https(url: str, timeout_read: int = 10, timeout_connect: int = 5) -> dict | None:
+    """Fetch a JSON document from an HTTPS URL with timeouts.
+
+    Args:
+        url: The full HTTPS URL to fetch.
+        timeout_read: Socket read timeout in seconds (default 10).
+        timeout_connect: Socket connect timeout in seconds (default 5).
+
+    Returns:
+        Parsed JSON dict, or ``None`` on any failure.
+
+    Raises:
+        FederationError: On network errors or non-200 responses.
+    """
+    import urllib.request as _urllib_request
+    import urllib.error as _urllib_error
+
+    try:
+        req = _urllib_request.Request(url, method="GET")
+        req.add_header("Accept", "application/did+json, application/json")
+        req.add_header("User-Agent", "seal-vpe/0.1")
+
+        response = _urllib_request.urlopen(
+            req,
+            timeout=timeout_read,
+            # We set the connect timeout via the opener
+        )
+        # Note: urllib doesn't separate connect/read timeouts cleanly.
+        # We use the combined timeout for simplicity.
+
+        if response.status != 200:
+            raise FederationError(
+                f"HTTP {response.status} fetching DID document from {url}"
+            )
+
+        content_type = response.headers.get("Content-Type", "")
+        body = response.read()
+        if not body:
+            raise FederationError(f"Empty response body from {url}")
+
+        data = json.loads(body.decode("utf-8"))
+        if not isinstance(data, dict):
+            raise FederationError(f"Expected JSON object, got {type(data).__name__}")
+        return data
+
+    except _urllib_error.HTTPError as exc:
+        raise FederationError(
+            f"HTTP {exc.code} fetching DID document from {url}"
+        ) from exc
+    except _urllib_error.URLError as exc:
+        raise FederationError(
+            f"URL error fetching DID document from {url}: {exc.reason}"
+        ) from exc
+    except OSError as exc:
+        raise FederationError(
+            f"Network error fetching DID document from {url}: {exc}"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise FederationError(
+            f"Malformed JSON in DID document from {url}: {exc}"
+        ) from exc
+    except UnicodeDecodeError as exc:
+        raise FederationError(
+            f"Non-UTF-8 response body from {url}: {exc}"
+        ) from exc
+
+
+def _extract_ed25519_from_did_document(doc: dict, expected_did: str = "") -> bytes | None:
+    """Extract an Ed25519 public key from a DID document's verificationMethod section.
+
+    Traverses the ``verificationMethod`` array and looks for entries where:
+    - ``type`` is ``\"Ed25519VerificationKey2018\"``, ``\"Ed25519VerificationKey2020\"``,
+      or ``\"Multikey\"`` with Ed25519 multicodec
+    - Unless ``expected_did`` is set, matches the controller or ID
+
+    Args:
+        doc: Parsed DID document (JSON dict).
+        expected_did: Optional expected DID to match against the verificationMethod
+            ``controller`` field. When empty, returns the first Ed25519 key found.
+
+    Returns:
+        Raw 32-byte Ed25519 public key, or ``None`` if no suitable key is found.
+    """
+    vm_list = doc.get("verificationMethod")
+    if not isinstance(vm_list, list):
+        return None
+
+    for vm in vm_list:
+        if not isinstance(vm, dict):
+            continue
+
+        vm_type = vm.get("type", "")
+        controller = vm.get("controller", "")
+        public_key_multi = vm.get("publicKeyMultibase", "")
+        public_key_jwk = vm.get("publicKeyJwk", {})
+
+        # If we have an expected DID, check controller matches
+        if expected_did and controller and controller != expected_did:
+            continue
+
+        # Skip if no key material at all
+        if not public_key_multi and not public_key_jwk:
+            continue
+
+        # --- Ed25519VerificationKey2018 / Ed25519VerificationKey2020 ---
+        if vm_type in ("Ed25519VerificationKey2018", "Ed25519VerificationKey2020"):
+            if public_key_multi:
+                try:
+                    key_bytes = _decode_multibase_key(public_key_multi)
+                    if key_bytes and len(key_bytes) == 32:
+                        return key_bytes
+                except (ValueError, FederationError):
+                    continue
+
+            # Fallback: publicKeyJwk for Ed25519
+            if public_key_jwk and isinstance(public_key_jwk, dict):
+                crv = public_key_jwk.get("crv", "")
+                if crv == "Ed25519":
+                    try:
+                        import base64 as _base64
+
+                        # JWK 'x' is base64url-encoded (no padding)
+                        x_b64 = public_key_jwk.get("x", "")
+                        if not x_b64:
+                            continue
+                        # Add padding
+                        padding = 4 - len(x_b64) % 4
+                        if padding != 4:
+                            x_b64 += "=" * padding
+                        key_bytes = _base64.urlsafe_b64decode(x_b64)
+                        if len(key_bytes) == 32:
+                            return key_bytes
+                    except Exception:
+                        continue
+
+        # --- Multikey (W3C CCG 2023) with Ed25519 multicodec ---
+        if vm_type == "Multikey" and public_key_multi:
+            try:
+                key_bytes = _decode_multibase_key(public_key_multi)
+                if key_bytes and len(key_bytes) == 32:
+                    return key_bytes
+            except (ValueError, FederationError):
+                continue
+
+    return None
+
+
+def _decode_multibase_key(multibase_str: str) -> bytes | None:
+    """Decode a multibase-encoded public key, stripping the Ed25519 multicodec prefix.
+
+    Supports:
+    - ``z`` prefix (base58btc): ``z<base58btc(multicodec + raw_key)>``
+
+    Args:
+        multibase_str: Multibase-encoded key string.
+
+    Returns:
+        Raw 32-byte key bytes, or ``None`` on failure.
+    """
+    if not multibase_str or multibase_str[0] != "z":
+        return None
+
+    try:
+        decoded = _base58btc_decode(multibase_str[1:])
+    except (ValueError, OverflowError):
+        return None
+
+    if not decoded:
+        return None
+
+    # Strip known Ed25519 multicodec prefixes
+    # 0xED (1 byte) — most common
+    # 0x1301 (2 bytes varint, LE) — also used in some specs
+    if len(decoded) >= 1 and decoded[0] == 0xED:
+        key_bytes = decoded[1:]
+    elif len(decoded) >= 2 and decoded[:2] == bytes([0x01, 0x13]):
+        key_bytes = decoded[2:]
+    else:
+        return None  # Unknown multicodec
+
+    if len(key_bytes) != 32:
+        return None
+
+    return key_bytes
+
+
+def resolve_via_did_document(
+    did: str,
+    *,
+    timeout_read: int = 10,
+    timeout_connect: int = 5,
+    ion_resolver: str | None = None,
+) -> bytes | None:
+    """Resolve an Ed25519 public key from a DID document via HTTPS.
+
+    Supported DID methods:
+    - ``did:web:<domain>[:<path>]`` — fetches from ``https://<domain>/.well-known/did.json``
+      or ``https://<domain>/<path>/did.json``
+    - ``did:ion:<suffix>`` — resolves via a public ION endpoint
+      (https://discover.did.msidentity.com/1.0/identifiers/<suffix>)
+
+    The function parses the JSON-LD DID document, extracts the first suitable
+    Ed25519 ``verificationMethod`` entry, and returns the raw 32-byte public key.
+
+    Args:
+        did: DID string to resolve (``did:web:...`` or ``did:ion:...``).
+        timeout_read: HTTP read timeout in seconds (default 10).
+        timeout_connect: HTTP connect timeout in seconds (deprecated;
+            urllib uses a single combined timeout).
+        ion_resolver: Optional custom ION resolver URL override.
+
+    Returns:
+        Raw 32-byte Ed25519 public key, or ``None`` if resolution fails.
+
+    Raises:
+        FederationError: On malformed DID URIs, network errors, HTTP errors,
+            malformed JSON, missing or unsupported verification methods.
+    """
+    if did.startswith("did:web:"):
+        url = _parse_did_web(did)
+        doc = _fetch_json_https(url, timeout_read=timeout_read)
+        if doc is None:
+            return None
+
+        key = _extract_ed25519_from_did_document(doc, expected_did=did)
+        return key
+
+    elif did.startswith("did:ion:"):
+        url = _parse_did_ion(did, resolver_base=ion_resolver)
+        doc = _fetch_json_https(url, timeout_read=timeout_read)
+        if doc is None:
+            return None
+
+        # ION responses wrap the document in a 'didDocument' key
+        inner_doc = doc.get("didDocument") or doc
+        if not isinstance(inner_doc, dict):
+            raise FederationError("ION response missing didDocument")
+
+        key = _extract_ed25519_from_did_document(inner_doc, expected_did=did)
+        return key
+
+    else:
+        raise FederationError(
+            f"Unsupported DID method: {did!r} — supported methods: did:web:, did:ion:"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Cross-agent audit trail
 # ---------------------------------------------------------------------------
 
