@@ -42,6 +42,93 @@ __all__ = [
 ]
 
 # ---------------------------------------------------------------------------
+# Internal helpers (shared between Ed25519 and HMAC paths)
+# ---------------------------------------------------------------------------
+
+
+def _build_envelope(
+    prompt: str,
+    scope: dict | None = None,
+    issuer: str = "",
+    audience: str = "",
+    doc_sha256: str = "",
+    ttl_seconds: int = 300,
+    nonce: str | None = None,
+    counter: int | None = None,
+    *,
+    cert_chain: list | None = None,
+) -> dict:
+    """Build a VPE envelope dict (without signature or iat — caller sets those).
+
+    Shared between Ed25519 (vpe_sign) and HMAC-SHA256 (vpe_sign_hmac) signers.
+    """
+    envelope = {
+        "vpe_version": VPE_VERSION,
+        "prompt": prompt,
+        "scope": scope or {},
+        "issuer": issuer,
+        "audience": audience,
+        "doc_sha256": doc_sha256,
+        "iat": int(time.time()),
+        "ttl_seconds": ttl_seconds,
+        "nonce": nonce if nonce is not None else _make_nonce(),
+        "counter": counter,
+        "signature": "",
+    }
+    if cert_chain is not None:
+        envelope["cert_chain"] = cert_chain
+    return envelope
+
+
+def _validate_envelope_structure(envelope_str: str) -> tuple[dict, dict]:
+    """Validate basic VPE envelope structure before signature verification.
+
+    Performs 7 structural checks shared by both Ed25519 and HMAC verify paths:
+    JSON parse, dict type, version, signature presence, scope type,
+    nonce presence+type, counter type, TTL type.
+
+    Returns:
+        tuple[dict, dict]: ``(envelope, precheck)`` where ``precheck`` is
+        ``{"valid": True, "reason": "ok"}`` or
+        ``{"valid": False, "reason": "..."}``.
+    """
+    try:
+        envelope = json.loads(envelope_str)
+    except (json.JSONDecodeError, ValueError) as exc:
+        return {}, {"valid": False, "reason": f"invalid_json: {exc}"}
+    if not isinstance(envelope, dict):
+        return {}, {"valid": False, "reason": "invalid_json: not a dict"}
+
+    if envelope.get("vpe_version", VPE_VERSION) != VPE_VERSION:
+        return envelope, {
+            "valid": False,
+            "reason": f"unsupported_version: {envelope.get('vpe_version')}",
+        }
+
+    sig_hex = envelope.get("signature", "")
+    if not sig_hex:
+        return envelope, {"valid": False, "reason": "missing_signature"}
+
+    scope = envelope.get("scope", {})
+    if not isinstance(scope, dict):
+        return envelope, {"valid": False, "reason": "scope_not_dict"}
+
+    nonce = envelope.get("nonce", "")
+    if not isinstance(nonce, str) or nonce == "":
+        return envelope, {"valid": False, "reason": "missing_or_empty_nonce"}
+
+    counter = envelope.get("counter")
+    if counter is not None and not isinstance(counter, int):
+        return envelope, {"valid": False, "reason": "counter_not_integer"}
+
+    ttl = envelope.get("ttl_seconds", 0)
+    if not isinstance(ttl, int):
+        return envelope, {"valid": False, "reason": "ttl_not_integer"}
+
+    return envelope, {"valid": True, "reason": "ok"}
+
+
+# ---------------------------------------------------------------------------
 # Sign (Ed25519)
 # ---------------------------------------------------------------------------
 
@@ -76,20 +163,12 @@ def vpe_sign(
         compact: Strip empty/default fields from wire format.
     """
     sk = _load_private_key(private_key)
-    envelope = {
-        "vpe_version": VPE_VERSION,
-        "prompt": prompt,
-        "scope": scope or {},
-        "issuer": issuer,
-        "audience": audience,
-        "doc_sha256": doc_sha256,
-        "iat": int(time.time()),
-        "ttl_seconds": ttl_seconds,
-        "nonce": nonce if nonce is not None else _make_nonce(),
-        "counter": counter,
-        "cert_chain": cert_chain,
-        "signature": "",
-    }
+    envelope = _build_envelope(
+        prompt, scope, issuer, audience, doc_sha256,
+        ttl_seconds, nonce, counter, cert_chain=cert_chain,
+    )
+    # vpe_sign always includes cert_chain even when None (backward compat)
+    envelope.setdefault("cert_chain", cert_chain)
     canon = _canonical_json(envelope)
     envelope["signature"] = sk.sign(canon).hex()
     if compact:
@@ -129,35 +208,13 @@ def vpe_verify(
     Returns:
         dict: ``{"valid": bool, "reason": str}``
     """
-    try:
-        envelope = json.loads(envelope_str)
-    except (json.JSONDecodeError, ValueError) as exc:
-        return {"valid": False, "reason": f"invalid_json: {exc}"}
-    if not isinstance(envelope, dict):
-        return {"valid": False, "reason": "invalid_json: not a dict"}
+    envelope, precheck = _validate_envelope_structure(envelope_str)
+    if not precheck["valid"]:
+        return precheck
 
-    if envelope.get("vpe_version", VPE_VERSION) != VPE_VERSION:
-        return {"valid": False, "reason": f"unsupported_version: {envelope.get('vpe_version')}"}
-
-    sig_hex = envelope.get("signature", "")
-    if not sig_hex:
-        return {"valid": False, "reason": "missing_signature"}
-
-    scope = envelope.get("scope", {})
-    if not isinstance(scope, dict):
-        return {"valid": False, "reason": "scope_not_dict"}
-
-    nonce = envelope.get("nonce", "")
-    if not isinstance(nonce, str) or nonce == "":
-        return {"valid": False, "reason": "missing_or_empty_nonce"}
-
-    counter = envelope.get("counter")
-    if counter is not None and not isinstance(counter, int):
-        return {"valid": False, "reason": "counter_not_integer"}
-
+    sig_hex = envelope["signature"]
     ttl = envelope.get("ttl_seconds", 0)
-    if not isinstance(ttl, int):
-        return {"valid": False, "reason": "ttl_not_integer"}
+    nonce = envelope.get("nonce", "")
 
     cert_chain = envelope.get("cert_chain")
     if trust_anchor is not None and cert_chain is not None:
@@ -244,19 +301,10 @@ def vpe_sign_hmac(
     if not isinstance(shared_secret, bytes) or len(shared_secret) == 0:
         raise ValueError("shared_secret must be non-empty bytes")
 
-    envelope = {
-        "vpe_version": VPE_VERSION,
-        "prompt": prompt,
-        "scope": scope or {},
-        "issuer": issuer,
-        "audience": audience,
-        "doc_sha256": doc_sha256,
-        "iat": int(time.time()),
-        "ttl_seconds": ttl_seconds,
-        "nonce": nonce if nonce is not None else _make_nonce(),
-        "counter": counter,
-        "signature": "",
-    }
+    envelope = _build_envelope(
+        prompt, scope, issuer, audience, doc_sha256,
+        ttl_seconds, nonce, counter,
+    )
     canon = _canonical_json(envelope)
     envelope["signature"] = hmac.new(shared_secret, canon, hashlib.sha256).hexdigest()
     if compact:
@@ -275,35 +323,12 @@ def vpe_verify_hmac(
     Checks: JSON parse, version, signature, TTL, scope, nonce, counter,
     constant-time HMAC comparison, key time constraints.
     """
-    try:
-        envelope = json.loads(envelope_str)
-    except (json.JSONDecodeError, ValueError) as exc:
-        return {"valid": False, "reason": f"invalid_json: {exc}"}
-    if not isinstance(envelope, dict):
-        return {"valid": False, "reason": "invalid_json: not a dict"}
+    envelope, precheck = _validate_envelope_structure(envelope_str)
+    if not precheck["valid"]:
+        return precheck
 
-    if envelope.get("vpe_version", VPE_VERSION) != VPE_VERSION:
-        return {"valid": False, "reason": f"unsupported_version: {envelope.get('vpe_version')}"}
-
-    sig_hex = envelope.get("signature", "")
-    if not sig_hex:
-        return {"valid": False, "reason": "missing_signature"}
-
-    scope = envelope.get("scope", {})
-    if not isinstance(scope, dict):
-        return {"valid": False, "reason": "scope_not_dict"}
-
-    nonce = envelope.get("nonce", "")
-    if not isinstance(nonce, str) or nonce == "":
-        return {"valid": False, "reason": "missing_or_empty_nonce"}
-
-    counter = envelope.get("counter")
-    if counter is not None and not isinstance(counter, int):
-        return {"valid": False, "reason": "counter_not_integer"}
-
+    sig_hex = envelope["signature"]
     ttl = envelope.get("ttl_seconds", 0)
-    if not isinstance(ttl, int):
-        return {"valid": False, "reason": "ttl_not_integer"}
 
     verify_envelope = dict(envelope)
     verify_envelope["signature"] = ""
