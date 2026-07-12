@@ -1226,6 +1226,7 @@ def resolve_trust_anchor(
     registry: TrustAnchorRegistry | None = None,
     dns_domain: str | None = None,
     did_str: str | None = None,
+    did_web: str | None = None,
 ) -> ResolutionResult:
     """Resolve a trust anchor for a given issuer using the available methods.
 
@@ -1233,12 +1234,15 @@ def resolve_trust_anchor(
         1. Trust anchor registry (pre-shared keys)
         2. DNS discovery (TXT record)
         3. DID discovery (did:key)
+        4. DID document resolution via HTTPS (did:web / did:ion)
 
     Args:
         issuer: The issuer identity string (e.g. ``"agent:alice"``).
         registry: Optional pre-configured registry instance.
         dns_domain: Optional domain for DNS TXT lookup.
         did_str: Optional did:key string for DID resolution.
+        did_web: Optional ``did:web:`` or ``did:ion:`` URL for HTTPS DID
+            document resolution (resolved via ``resolve_via_did_document()``).
 
     Returns:
         ``ResolutionResult`` with the resolved public key and source.
@@ -1261,6 +1265,12 @@ def resolve_trust_anchor(
         if pk is not None:
             did_agent = f"did:{did_str}"
             return ResolutionResult(public_key=pk, source="did", agent_id=did_agent)
+
+    # 4. DID document resolution via HTTPS (did:web / did:ion)
+    if did_web is not None:
+        pk = resolve_via_did_document(did_web)
+        if pk is not None:
+            return ResolutionResult(public_key=pk, source="did_web", agent_id=did_web)
 
     return ResolutionResult(public_key=None, source="none")
 

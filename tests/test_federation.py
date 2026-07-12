@@ -224,6 +224,91 @@ class TestResolutionChain:
         assert result.public_key == alice_keys["public_key"]
         assert result.source == "did"
 
+    def test_did_web_fallback_calls_did_document(self, monkeypatch, alice_keys):
+        """did:web passed to resolve_trust_anchor calls resolve_via_did_document."""
+        from seal.federation import resolve_via_did_document
+
+        def mock_did_document(did, **kwargs):
+            return alice_keys["public_key"]
+
+        monkeypatch.setattr(
+            "seal.federation.resolve_via_did_document", mock_did_document
+        )
+
+        result = resolve_trust_anchor(
+            "agent:alice",
+            did_web="did:web:agent.example.com",
+        )
+
+        assert result.public_key == alice_keys["public_key"]
+        assert result.source == "did_web"
+
+    def test_did_web_skipped_when_not_provided(self, monkeypatch, alice_keys):
+        """resolve_trust_anchor does NOT call resolve_via_did_document when did_web is None."""
+        from seal.federation import resolve_via_did_document
+
+        call_count = 0
+
+        def counting_mock(did, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return alice_keys["public_key"]
+
+        monkeypatch.setattr(
+            "seal.federation.resolve_via_did_document", counting_mock
+        )
+
+        resolve_trust_anchor("agent:alice")
+
+        assert call_count == 0
+
+    def test_did_web_returns_none_when_doc_fails(self, monkeypatch):
+        """When resolve_via_did_document returns None, result is none source."""
+        from seal.federation import resolve_via_did_document, resolve_trust_anchor
+
+        def mock_none(did, **kwargs):
+            return None
+
+        monkeypatch.setattr(
+            "seal.federation.resolve_via_did_document", mock_none
+        )
+
+        result = resolve_trust_anchor(
+            "agent:alice",
+            did_web="did:web:broken.example.com",
+        )
+
+        assert result.public_key is None
+        assert result.source == "none"
+
+    def test_did_web_is_last_resort_after_did_key(self, monkeypatch, alice_keys):
+        """did:web only tried after did:key fails — did:key takes priority."""
+        from seal.federation import resolve_via_did_document, resolve_trust_anchor
+
+        # did_str wins over did_web when did_str is provided and succeeds
+        did_doc_called = False
+
+        def mock_did_document(did, **kwargs):
+            nonlocal did_doc_called
+            did_doc_called = True
+            return alice_keys["public_key"]
+
+        monkeypatch.setattr(
+            "seal.federation.resolve_via_did_document", mock_did_document
+        )
+
+        # Provide a bad did:key so it fails, but did:web resolves
+        result = resolve_trust_anchor(
+            "agent:alice",
+            did_str="did:key:zInvalid",
+            did_web="did:web:agent.example.com",
+        )
+
+        # did:key fails, did:web should be tried
+        assert result.public_key == alice_keys["public_key"]
+        assert result.source == "did_web"
+        assert did_doc_called
+
 
 # ---------------------------------------------------------------------------
 # Federated signing
