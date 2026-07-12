@@ -442,7 +442,11 @@ class DivisionVPEAudit:
                 if isinstance(parsed, dict):
                     self._last_episode_id = parsed.get("episode_id")
         except (json.JSONDecodeError, TypeError, AttributeError):
-            pass
+            logger.warning(
+                "VPE audit: failed to parse episode_id from result type=%s content=%.100r",
+                type(result).__name__,
+                result,
+            )
 
 
 # ---------------------------------------------------------------------------
