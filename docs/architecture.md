@@ -40,6 +40,7 @@ lifecycle, deployment, and advanced trust models layered on top:
 - **Multi-signing** — `vpe_sign_multi()` / `vpe_verify_multi()` for N-of-M multi-party authorization
 - **Hierarchical trust** — `verify_certificate()` / `verify_cert_chain()` walk a root→intermediate→signing key chain, enabling delegation and revocation without re-keying every agent
 - **Hardware signing** — `vpe_sign_hardware()` / `vpe_verify_hardware()` keep the private key on a YubiKey/TPM/Secure Enclave
+- **One envelope shape, two algorithms** — the Ed25519 and HMAC paths share internal helpers in `seal/core.py`: `_build_envelope()` constructs every envelope, and `_validate_envelope_structure()` runs the same pre-signature structural checks (JSON parse, version, signature presence, scope/nonce/counter/TTL types) for both verifiers, so the two algorithms cannot drift apart in field layout or rejection semantics
 
 ### EPD Scanner
 
@@ -74,7 +75,7 @@ lifecycle, deployment, and advanced trust models layered on top:
 | **Persistent stores** | `seal/store.py` | SQLite (WAL) `NonceStore` + `CounterStore` survive restarts; expired-nonce cleanup |
 | **Key lifecycle** | `seal/key_manager.py`, `seal/key_store.py`, `seal/rotator.py` | SQLite key registry (generated→active→expiring→retired→revoked), auto-rotation guard, rotation daemon (`seal key daemon`) |
 | **Hardware** | `seal/hardware.py` | HSM abstraction — YubiKey/TPM/Secure Enclave; private key never leaves the device |
-| **Federation** | `seal/federation.py` | Cross-agent trust anchors and federated audit trail |
+| **Federation** | `seal/federation.py` | Cross-agent trust anchors and federated audit trail. `resolve_trust_anchor()` resolves in order: registry → DNS TXT (`resolve_via_dns`) → `did:key` (`resolve_via_did`) → `did:web`/`did:ion` (`resolve_via_did_document`, HTTPS). **Gap:** `vpe_federated_verify()` does not yet accept/forward `did_web`, so the did:web step is reachable only by calling `resolve_trust_anchor()` directly |
 | **Rollback** | `seal/rollback.py` | One-toggle disable + full config rollback; audit data preserved |
 | **Division audit** | `seal/division_audit.py`, `seal/integration/division_vpe_audit.py` | Store and query VPE verification results as Division memory episodes |
 | **Adversarial fuzzer** | `seal/epd/fuzzer.py` | Mutation fuzzing of injection patterns (`seal fuzz`) to measure EPD catch rate |
