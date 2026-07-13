@@ -750,6 +750,43 @@ def cmd_federation_import(args) -> int:
     return 0
 
 
+def cmd_federation_verify(args) -> int:
+    """Verify a VPE envelope using federated trust resolution."""
+    from seal.federation import vpe_federated_verify, TrustAnchorRegistry
+
+    envelope_str = getattr(args, "envelope_file", None)
+    if envelope_str:
+        envelope_str = Path(envelope_str).read_text().strip()
+    else:
+        envelope_str = sys.stdin.read().strip()
+
+    if not envelope_str:
+        print("error: no envelope provided", file=sys.stderr)
+        return 1
+
+    registry = None
+    registry_path = getattr(args, "registry", None)
+    if registry_path:
+        registry = TrustAnchorRegistry(path=registry_path)
+
+    result = vpe_federated_verify(
+        envelope_str,
+        registry=registry,
+        dns_domain=getattr(args, "dns_domain", None),
+        did_str=getattr(args, "did_str", None),
+        did_web=getattr(args, "did_web", None),
+        issuer_override=getattr(args, "issuer_override", None),
+    )
+
+    json_output = getattr(args, "json_output", True)
+    if json_output:
+        print(json.dumps(result, indent=2))
+    else:
+        print("valid" if result.get("valid") else "invalid")
+
+    return 0 if result.get("valid") else 1
+
+
 # ---------------------------------------------------------------------------
 # Parser builder
 # ---------------------------------------------------------------------------
@@ -916,6 +953,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="allowed exporter agent ID (may be specified multiple times)",
     )
 
+    p_fed_verify = fed_sub.add_parser("verify", help="verify a VPE envelope using federated trust resolution")
+    p_fed_verify.add_argument("envelope_file", nargs="?", help="path to envelope file (omit to read from stdin)")
+    p_fed_verify.add_argument(
+        "--registry",
+        help="path to trust anchor registry (default: no registry)",
+    )
+    p_fed_verify.add_argument("--dns-domain", help="domain for DNS TXT lookup")
+    p_fed_verify.add_argument("--did-str", help="did:key string for DID resolution")
+    p_fed_verify.add_argument("--did-web", help="did:web or did:ion URL for HTTPS DID document resolution")
+    p_fed_verify.add_argument("--issuer-override", help="override the issuer identity for key lookup")
+
     # --- fuzz ---
     p_fuzz = sub.add_parser("fuzz", help="run EPD pattern mutation fuzzer benchmark")
     p_fuzz.add_argument("--count", type=int, default=1000, help="minimum mutations to generate (default: 1000)")
@@ -987,6 +1035,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_federation_export(args)
         elif args.federation_command == "import":
             return cmd_federation_import(args)
+        elif args.federation_command == "verify":
+            return cmd_federation_verify(args)
         return 2
     elif args.command == "fuzz":
         from seal.epd.fuzzer import main as fuzz_main

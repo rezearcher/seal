@@ -1362,6 +1362,7 @@ def vpe_federated_verify(
     registry: TrustAnchorRegistry | None = None,
     dns_domain: str | None = None,
     did_str: str | None = None,
+    did_web: str | None = None,
     issuer_override: str | None = None,
     audit_log: FederationAuditLog | None = None,
 ) -> dict:
@@ -1371,6 +1372,7 @@ def vpe_federated_verify(
         1. Trust anchor registry
         2. DNS TXT record
         3. did:key identifier
+        4. DID document resolution via HTTPS (did:web / did:ion)
 
     Then delegates to ``vpe_verify()`` for the actual cryptographic check.
 
@@ -1379,6 +1381,8 @@ def vpe_federated_verify(
         registry: Optional trust anchor registry.
         dns_domain: Optional domain for DNS TXT lookup.
         did_str: Optional did:key string for DID resolution.
+        did_web: Optional ``did:web:`` or ``did:ion:`` URL for HTTPS DID
+            document resolution.
         issuer_override: Override the issuer identity for key lookup
             (if not provided, uses the ``issuer`` field from the envelope).
         audit_log: Optional audit log for cross-agent tracking.
@@ -1424,6 +1428,7 @@ def vpe_federated_verify(
         registry=registry,
         dns_domain=dns_domain,
         did_str=did_str,
+        did_web=did_web,
     )
 
     if resolution.public_key is None:

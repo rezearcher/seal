@@ -471,6 +471,30 @@ class TestFederatedVerify:
         )
         assert result["valid"] is False
 
+    def test_verify_with_did_web_forwarded(self, alice_keys, monkeypatch):
+        """did_web kwarg forwarded through vpe_federated_verify to resolve_trust_anchor."""
+        signed = vpe_federated_sign(
+            prompt="did:web verify chain",
+            issuer="agent:alice",
+            audience="agent:bob",
+            private_key=alice_keys["private_key"],
+        )
+
+        def mock_did_document(did, **kwargs):
+            return alice_keys["public_key"]
+
+        monkeypatch.setattr(
+            "seal.federation.resolve_via_did_document", mock_did_document
+        )
+
+        result = vpe_federated_verify(
+            signed.envelope,
+            did_web="did:web:agent.example.com",
+        )
+
+        assert result["valid"] is True
+        assert result["source"] == "did_web"
+
 
 # ---------------------------------------------------------------------------
 # Cross-agent audit trail
