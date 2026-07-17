@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import abc
 import hashlib
+import logging
 import os
 import platform
 import shutil
@@ -59,8 +60,18 @@ _YUBIKEY_PIV_SLOT = "9d"
 
 
 # ---------------------------------------------------------------------------
+
+
+class HsmError(Exception):
+    """Error from hardware security module operations."""
+
+
+# ---------------------------------------------------------------------------
 # Key info record
 # ---------------------------------------------------------------------------
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -183,21 +194,34 @@ class YubiKeyPIVProvider(HsmProvider):
         with tempfile.TemporaryDirectory() as tmp:
             pubkey_pem = os.path.join(tmp, "pubkey.pem")
 
-            subprocess.run(
-                [
-                    "ykman",
-                    "piv",
-                    "keys",
-                    "generate",
-                    "--algorithm",
-                    "ECCP256",
-                    _YUBIKEY_PIV_SLOT,
-                    pubkey_pem,
-                ],
-                check=True,
-                capture_output=True,
-                timeout=30,
-            )
+            try:
+                subprocess.run(
+                    [
+                        "ykman",
+                        "piv",
+                        "keys",
+                        "generate",
+                        "--algorithm",
+                        "ECCP256",
+                        _YUBIKEY_PIV_SLOT,
+                        pubkey_pem,
+                    ],
+                    check=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+            except subprocess.CalledProcessError as exc:
+                logger.error(
+                    "YubiKey PIV key generation failed (exit=%d): %s",
+                    exc.returncode,
+                    exc.stderr.strip(),
+                )
+                raise HsmError(
+                    f"YubiKey PIV key generation failed: {exc.stderr.strip()}"
+                ) from exc
+            except subprocess.TimeoutExpired:
+                logger.error("YubiKey PIV key generation timed out after 30s")
+                raise HsmError("YubiKey PIV key generation timed out after 30s")
 
             # Read the public key
             public_key = _load_ec_pubkey_from_pem(pubkey_pem)
@@ -227,21 +251,34 @@ class YubiKeyPIVProvider(HsmProvider):
 
             Path(hash_file).write_bytes(payload_hash)
 
-            subprocess.run(
-                [
-                    "ykman",
-                    "piv",
-                    "sign",
-                    "--algorithm",
-                    "ECDSA",
-                    _YUBIKEY_PIV_SLOT,
-                    hash_file,
-                    sig_file,
-                ],
-                check=True,
-                capture_output=True,
-                timeout=30,
-            )
+            try:
+                subprocess.run(
+                    [
+                        "ykman",
+                        "piv",
+                        "sign",
+                        "--algorithm",
+                        "ECDSA",
+                        _YUBIKEY_PIV_SLOT,
+                        hash_file,
+                        sig_file,
+                    ],
+                    check=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+            except subprocess.CalledProcessError as exc:
+                logger.error(
+                    "YubiKey PIV signing failed (exit=%d): %s",
+                    exc.returncode,
+                    exc.stderr.strip(),
+                )
+                raise HsmError(
+                    f"YubiKey PIV signing failed: {exc.stderr.strip()}"
+                ) from exc
+            except subprocess.TimeoutExpired:
+                logger.error("YubiKey PIV signing timed out after 30s")
+                raise HsmError("YubiKey PIV signing timed out after 30s")
 
             return Path(sig_file).read_bytes()
 
@@ -308,59 +345,94 @@ class TPMProvider(HsmProvider):
             pubkey_pem = os.path.join(tmp, "pubkey.pem")
 
             # Create primary key in storage hierarchy
-            subprocess.run(
-                ["tpm2_createprimary", "-c", primary_ctx, "-Q"],
-                check=True,
-                capture_output=True,
-                timeout=30,
-            )
+            try:
+                subprocess.run(
+                    ["tpm2_createprimary", "-c", primary_ctx, "-Q"],
+                    check=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+            except subprocess.CalledProcessError as exc:
+                logger.error("TPM createprimary failed (exit=%d): %s", exc.returncode, exc.stderr.strip())
+                raise HsmError(f"TPM createprimary failed: {exc.stderr.strip()}") from exc
+            except subprocess.TimeoutExpired:
+                logger.error("TPM createprimary timed out after 30s")
+                raise HsmError("TPM createprimary timed out after 30s")
 
             # Create ECC P-256 key
-            subprocess.run(
-                [
-                    "tpm2_create",
-                    "-C",
-                    primary_ctx,
-                    "-G",
-                    "ecc256:ecdsa",
-                    "-u",
-                    key_pub,
-                    "-r",
-                    key_priv,
-                    "-Q",
-                ],
-                check=True,
-                capture_output=True,
-                timeout=30,
-            )
+            try:
+                subprocess.run(
+                    [
+                        "tpm2_create",
+                        "-C",
+                        primary_ctx,
+                        "-G",
+                        "ecc256:ecdsa",
+                        "-u",
+                        key_pub,
+                        "-r",
+                        key_priv,
+                        "-Q",
+                    ],
+                    check=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+            except subprocess.CalledProcessError as exc:
+                logger.error("TPM create key failed (exit=%d): %s", exc.returncode, exc.stderr.strip())
+                raise HsmError(f"TPM create key failed: {exc.stderr.strip()}") from exc
+            except subprocess.TimeoutExpired:
+                logger.error("TPM create key timed out after 30s")
+                raise HsmError("TPM create key timed out after 30s")
 
             # Load into context
-            subprocess.run(
-                ["tpm2_load", "-C", primary_ctx, "-u", key_pub, "-r", key_priv, "-c", key_ctx, "-Q"],
-                check=True,
-                capture_output=True,
-                timeout=30,
-            )
+            try:
+                subprocess.run(
+                    ["tpm2_load", "-C", primary_ctx, "-u", key_pub, "-r", key_priv, "-c", key_ctx, "-Q"],
+                    check=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+            except subprocess.CalledProcessError as exc:
+                logger.error("TPM load key failed (exit=%d): %s", exc.returncode, exc.stderr.strip())
+                raise HsmError(f"TPM load key failed: {exc.stderr.strip()}") from exc
+            except subprocess.TimeoutExpired:
+                logger.error("TPM load key timed out after 30s")
+                raise HsmError("TPM load key timed out after 30s")
 
             # Read public key
-            subprocess.run(
-                ["tpm2_readpublic", "-c", key_ctx, "-o", pubkey_pem, "-Q"],
-                check=True,
-                capture_output=True,
-                timeout=30,
-            )
+            try:
+                subprocess.run(
+                    ["tpm2_readpublic", "-c", key_ctx, "-o", pubkey_pem, "-Q"],
+                    check=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+            except subprocess.CalledProcessError as exc:
+                logger.error("TPM readpublic failed (exit=%d): %s", exc.returncode, exc.stderr.strip())
+                raise HsmError(f"TPM readpublic failed: {exc.stderr.strip()}") from exc
+            except subprocess.TimeoutExpired:
+                logger.error("TPM readpublic timed out after 30s")
+                raise HsmError("TPM readpublic timed out after 30s")
             public_key = _load_ec_pubkey_from_pem(pubkey_pem)
 
             # Persist the key context for later signing
             persist_dir = _tpm_persist_dir()
             persist_dir.mkdir(parents=True, exist_ok=True)
             persist_ctx = persist_dir / f"{key_id}.ctx"
-            subprocess.run(
-                ["tpm2_evictcontrol", "-c", key_ctx, "-o", str(persist_ctx), "-Q"],
-                check=True,
-                capture_output=True,
-                timeout=30,
-            )
+            try:
+                subprocess.run(
+                    ["tpm2_evictcontrol", "-c", key_ctx, "-o", str(persist_ctx), "-Q"],
+                    check=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+            except subprocess.CalledProcessError as exc:
+                logger.error("TPM evictcontrol failed (exit=%d): %s", exc.returncode, exc.stderr.strip())
+                raise HsmError(f"TPM evictcontrol failed: {exc.stderr.strip()}") from exc
+            except subprocess.TimeoutExpired:
+                logger.error("TPM evictcontrol timed out after 30s")
+                raise HsmError("TPM evictcontrol timed out after 30s")
 
         key = HsmKey(
             key_id=key_id,
@@ -390,23 +462,30 @@ class TPMProvider(HsmProvider):
 
             Path(msg_file).write_bytes(canonical_payload)
 
-            subprocess.run(
-                [
-                    "tpm2_sign",
-                    "-c",
-                    str(key_ctx),
-                    "-g",
-                    "sha256",
-                    "-o",
-                    sig_file,
-                    "-f",
-                    "plain",
-                    msg_file,
-                ],
-                check=True,
-                capture_output=True,
-                timeout=30,
-            )
+            try:
+                subprocess.run(
+                    [
+                        "tpm2_sign",
+                        "-c",
+                        str(key_ctx),
+                        "-g",
+                        "sha256",
+                        "-o",
+                        sig_file,
+                        "-f",
+                        "plain",
+                        msg_file,
+                    ],
+                    check=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+            except subprocess.CalledProcessError as exc:
+                logger.error("TPM sign failed (exit=%d): %s", exc.returncode, exc.stderr.strip())
+                raise HsmError(f"TPM sign failed: {exc.stderr.strip()}") from exc
+            except subprocess.TimeoutExpired:
+                logger.error("TPM sign timed out after 30s")
+                raise HsmError("TPM sign timed out after 30s")
 
             return Path(sig_file).read_bytes()
 
@@ -493,20 +572,33 @@ class SecureEnclaveProvider(HsmProvider):
         priv_pem = os.path.join(keys_dir, f"{key_id}.pem")
         pub_pem = os.path.join(keys_dir, f"{key_id}.pub.pem")
 
-        subprocess.run(
-            [
-                "security",
-                "create-keypair",
-                "-k",
-                priv_pem,
-                "-p",
-                pub_pem,
-                "-s",  # Secure Enclave
-            ],
-            check=True,
-            capture_output=True,
-            timeout=30,
-        )
+        try:
+            subprocess.run(
+                [
+                    "security",
+                    "create-keypair",
+                    "-k",
+                    priv_pem,
+                    "-p",
+                    pub_pem,
+                    "-s",  # Secure Enclave
+                ],
+                check=True,
+                capture_output=True,
+                timeout=30,
+            )
+        except subprocess.CalledProcessError as exc:
+            logger.error(
+                "Secure Enclave key generation failed (exit=%d): %s",
+                exc.returncode,
+                exc.stderr.strip(),
+            )
+            raise HsmError(
+                f"Secure Enclave key generation failed: {exc.stderr.strip()}"
+            ) from exc
+        except subprocess.TimeoutExpired:
+            logger.error("Secure Enclave key generation timed out after 30s")
+            raise HsmError("Secure Enclave key generation timed out after 30s")
 
         public_key = _load_ec_pubkey_from_pem(pub_pem)
 
@@ -546,20 +638,33 @@ class SecureEnclaveProvider(HsmProvider):
             sig_file = os.path.join(tmp, "data.sig")
             Path(data_file).write_bytes(canonical_payload)
 
-            subprocess.run(
-                [
-                    "security",
-                    "sign",
-                    "-k",
-                    priv_pem,  # PEM with keychain persistent reference
-                    "-o",
-                    sig_file,
-                    data_file,
-                ],
-                check=True,
-                capture_output=True,
-                timeout=30,
-            )
+            try:
+                subprocess.run(
+                    [
+                        "security",
+                        "sign",
+                        "-k",
+                        priv_pem,  # PEM with keychain persistent reference
+                        "-o",
+                        sig_file,
+                        data_file,
+                    ],
+                    check=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+            except subprocess.CalledProcessError as exc:
+                logger.error(
+                    "Secure Enclave signing failed (exit=%d): %s",
+                    exc.returncode,
+                    exc.stderr.strip(),
+                )
+                raise HsmError(
+                    f"Secure Enclave signing failed: {exc.stderr.strip()}"
+                ) from exc
+            except subprocess.TimeoutExpired:
+                logger.error("Secure Enclave signing timed out after 30s")
+                raise HsmError("Secure Enclave signing timed out after 30s")
 
             return Path(sig_file).read_bytes()
 
