@@ -226,7 +226,6 @@ class TestResolutionChain:
 
     def test_did_web_fallback_calls_did_document(self, monkeypatch, alice_keys):
         """did:web passed to resolve_trust_anchor calls resolve_via_did_document."""
-        from seal.federation import resolve_via_did_document
 
         def mock_did_document(did, **kwargs):
             return alice_keys["public_key"]
@@ -245,7 +244,6 @@ class TestResolutionChain:
 
     def test_did_web_skipped_when_not_provided(self, monkeypatch, alice_keys):
         """resolve_trust_anchor does NOT call resolve_via_did_document when did_web is None."""
-        from seal.federation import resolve_via_did_document
 
         call_count = 0
 
@@ -264,7 +262,7 @@ class TestResolutionChain:
 
     def test_did_web_returns_none_when_doc_fails(self, monkeypatch):
         """When resolve_via_did_document returns None, result is none source."""
-        from seal.federation import resolve_via_did_document, resolve_trust_anchor
+        from seal.federation import resolve_trust_anchor
 
         def mock_none(did, **kwargs):
             return None
@@ -283,7 +281,7 @@ class TestResolutionChain:
 
     def test_did_web_is_last_resort_after_did_key(self, monkeypatch, alice_keys):
         """did:web only tried after did:key fails — did:key takes priority."""
-        from seal.federation import resolve_via_did_document, resolve_trust_anchor
+        from seal.federation import resolve_trust_anchor
 
         # did_str wins over did_web when did_str is provided and succeeds
         did_doc_called = False

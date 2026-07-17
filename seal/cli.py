@@ -752,7 +752,7 @@ def cmd_federation_import(args) -> int:
 
 def cmd_federation_verify(args) -> int:
     """Verify a VPE envelope using federated trust resolution."""
-    from seal.federation import vpe_federated_verify, TrustAnchorRegistry
+    from seal.federation import TrustAnchorRegistry, vpe_federated_verify
 
     envelope_str = getattr(args, "envelope_file", None)
     if envelope_str:

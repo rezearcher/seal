@@ -2,9 +2,9 @@
 
 site_name: Seal / VPE
 site_description: Verified Prompt Envelope Protocol — Cryptographic provenance for AI agent prompts
-site_url: https://nousresearch.github.io/seal
-repo_url: https://github.com/nousresearch/seal
-repo_name: nousresearch/seal
+site_url: https://rezearcher.github.io/seal
+repo_url: https://github.com/rezearcher/seal
+repo_name: rezearcher/seal
 edit_uri: edit/main/docs/
 
 theme:
@@ -71,7 +71,7 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/nousresearch/seal
+      link: https://github.com/rezearcher/seal
 
 nav:
   - Home: index.md
