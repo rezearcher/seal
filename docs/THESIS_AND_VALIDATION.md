@@ -100,8 +100,7 @@ war — we must not *lose* it while we win the deterministic classes.**
   untested.
 
 ### [BLOCKED] / risks to retire before selling
-- **Keys stored unencrypted at rest** (`key_manager.py`, found in audit).
-  Productionization blocker for a security product.
+- **[RESOLVED] Keys encrypted at rest** (`key_manager.py`, Fernet encryption implemented, auto-migration of legacy keys).
 - **Adoption**: provenance only works if upstream sources sign. No customer has
   integrated; the integration tax is unproven (managed-filter packaging is the
   intended answer, also unbuilt).

@@ -208,7 +208,7 @@ Sign in TS      → Verify in Python / Go / Rust
 
 ## Security Notes / Known Limitations
 
-- **Private keys unencrypted at rest:** Private keys stored in the key manager (`~/.seal/keys.db` via `seal/key_manager.py`) are currently stored raw (unencrypted) in SQLite. Encryption-at-rest for the key store is planned but not yet implemented. Protect `~/.seal/keys.db` with appropriate filesystem permissions.
+- **Private keys encrypted at rest:** Private keys stored in `seal/key_manager.py` are encrypted with **Fernet** (`cryptography.fernet.Fernet`) before writing to the SQLite registry at `~/.seal/keys.db`. A Fernet master key is auto-generated at `~/.seal/master.key` on first use. Legacy unencrypted keys are auto-migrated on read with a warning. All filesystem access to `~/.seal/` should still be protected with appropriate permissions.
 - **TTL enforcement requires `iat`:** TTL expiry is only enforced when the `iat` (issued-at) field is present in the envelope. Envelopes created by `vpe_sign` always include `iat`; legacy envelopes without `iat` are treated as having no expiry.
 - **Two credential store paths exist — only one is encrypted:** `seal/credential_store.py` (`seal.credential_store.CredentialStore`) uses Fernet encryption at rest and is the recommended path. `seal/secrets_broker.py` contains a legacy `CredentialStore` that stores credentials as **plaintext JSON** at `~/.hermes/secrets.json` — it is deprecated and will emit a `DeprecationWarning` on import. Use `seal.broker` and `seal.credential_store` for new code.
 

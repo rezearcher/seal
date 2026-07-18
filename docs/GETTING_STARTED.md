@@ -442,7 +442,7 @@ These are the concrete issues found during install and verification on 2026-06-1
 
 1. **`pip install seal-vpe` is not available.** PyPI publish is pending. Use the `git+https`, source, or wheel install paths above.
 
-2. **Private keys are stored unencrypted at rest.** Keys in `~/.seal/keys.db` are raw bytes with no encryption. The key manager docstring acknowledges this as future work. See [SECURITY.md](https://github.com/nousresearch/seal/blob/main/SECURITY.md) for the full security posture.
+2. **Private keys are now encrypted at rest (resolved).** Previously, keys in `~/.seal/keys.db` were stored raw — this has been fixed by implementing Fernet encryption in `seal/key_manager.py` with an auto-generated `~/.seal/master.key` and auto-migration of legacy keys. See [SECURITY.md](https://github.com/rezearcher/seal/blob/main/SECURITY.md) for the full security posture.
 
 3. **The prebuilt wheel in `dist/` is stale.** It was built from an earlier commit and is missing the `key`, `hardware`, `epd`, `memory`, `quickstart`, and `fuzz` subcommands. Use `git+https` or source to get the current CLI surface.
 
