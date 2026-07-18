@@ -15,27 +15,17 @@ from typing import Any
 
 from seal._base import (
     VPE_VERSION,
+    _ENVELOPE_FIELDS,
     _canonical_json,
 )
+
+SIGNED_FIELDS = _ENVELOPE_FIELDS
 
 # ---------------------------------------------------------------------------
 # Protocol constants
 # ---------------------------------------------------------------------------
 
 DEFAULT_TTL_SECONDS = 300
-SIGNED_FIELDS = [
-    "vpe_version",
-    "prompt",
-    "scope",
-    "issuer",
-    "audience",
-    "doc_sha256",
-    "iat",
-    "ttl_seconds",
-    "nonce",
-    "counter",
-    "cert_chain",
-]
 
 # ---------------------------------------------------------------------------
 # Types

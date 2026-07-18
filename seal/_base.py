@@ -29,19 +29,10 @@ _ENVELOPE_FIELDS = [
     "cert_chain",
 ]
 
-_STRIPPABLE_FIELD_DEFAULTS: dict = {
-    "vpe_version": VPE_VERSION,
-    "scope": {},
-    "issuer": "",
-    "audience": "",
-    "doc_sha256": "",
-    "iat": None,
-    "counter": None,
-    "cert_chain": None,
-}
-
 _DEFAULT_TTL = 300
 
+# Shared canonical defaults for all 11 envelope fields (except prompt — always required).
+# Each downstream consumer derives its subset (e.g. strippable defaults).
 _CANONICAL_DEFAULTS: dict = {
     "vpe_version": VPE_VERSION,
     "scope": {},
@@ -49,10 +40,18 @@ _CANONICAL_DEFAULTS: dict = {
     "audience": "",
     "doc_sha256": "",
     "iat": None,
-    "ttl_seconds": 300,
+    "ttl_seconds": _DEFAULT_TTL,
     "nonce": "",
     "counter": None,
     "cert_chain": None,
+}
+
+# Fields whose defaults can be omitted from the wire-format envelope.
+# Subset of _CANONICAL_DEFAULTS; ttl_seconds and nonce have special handling.
+_STRIPPABLE_FIELD_DEFAULTS: dict = {
+    k: v
+    for k, v in _CANONICAL_DEFAULTS.items()
+    if k not in ("ttl_seconds", "nonce")
 }
 
 HMAC_SIGNATURE_BYTES = 32
