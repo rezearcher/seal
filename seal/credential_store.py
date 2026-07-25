@@ -50,8 +50,8 @@ def _ensure_seal_dir(path: Path) -> None:
     parent.mkdir(parents=True, exist_ok=True)
     try:
         parent.chmod(0o700)
-    except OSError:  # pragma: no cover - non-POSIX or restricted FS
-        pass
+    except OSError as exc:  # pragma: no cover - non-POSIX or restricted FS
+        logger.warning("cannot set 0700 perms on seal dir %s: %s", parent, exc)
 
 
 def _load_or_create_keyfile(keyfile: Path) -> bytes:
@@ -69,8 +69,8 @@ def _load_or_create_keyfile(keyfile: Path) -> bytes:
         os.close(fd)
     try:
         keyfile.chmod(0o600)
-    except OSError:  # pragma: no cover
-        pass
+    except OSError as exc:  # pragma: no cover
+        logger.warning("cannot set 0600 perms on keyfile %s: %s", keyfile, exc)
     return key
 
 
@@ -160,13 +160,13 @@ class CredentialStore:
             os.close(fd)
         try:
             tmp.chmod(0o600)
-        except OSError:  # pragma: no cover
-            pass
+        except OSError as exc:  # pragma: no cover
+            logger.warning("cannot set 0600 perms on tmp credential file %s: %s", tmp, exc)
         os.replace(tmp, self.path)
         try:
             self.path.chmod(0o600)
-        except OSError:  # pragma: no cover
-            pass
+        except OSError as exc:  # pragma: no cover
+            logger.warning("cannot set 0600 perms on credential store %s: %s", self.path, exc)
 
     # --------------------------------------------------------------- public
     def set(self, label: str, value: str) -> None:
