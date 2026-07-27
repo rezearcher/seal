@@ -30,8 +30,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv venv
-          uv pip install -e ".[dev]"
+          uv sync --locked --group dev
 
       - name: Run ruff linter
         run: uv run ruff check .
