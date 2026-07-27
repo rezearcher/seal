@@ -230,9 +230,7 @@ class TestResolutionChain:
         def mock_did_document(did, **kwargs):
             return alice_keys["public_key"]
 
-        monkeypatch.setattr(
-            "seal.federation.resolve_via_did_document", mock_did_document
-        )
+        monkeypatch.setattr("seal.federation.resolve_via_did_document", mock_did_document)
 
         result = resolve_trust_anchor(
             "agent:alice",
@@ -252,9 +250,7 @@ class TestResolutionChain:
             call_count += 1
             return alice_keys["public_key"]
 
-        monkeypatch.setattr(
-            "seal.federation.resolve_via_did_document", counting_mock
-        )
+        monkeypatch.setattr("seal.federation.resolve_via_did_document", counting_mock)
 
         resolve_trust_anchor("agent:alice")
 
@@ -267,9 +263,7 @@ class TestResolutionChain:
         def mock_none(did, **kwargs):
             return None
 
-        monkeypatch.setattr(
-            "seal.federation.resolve_via_did_document", mock_none
-        )
+        monkeypatch.setattr("seal.federation.resolve_via_did_document", mock_none)
 
         result = resolve_trust_anchor(
             "agent:alice",
@@ -291,9 +285,7 @@ class TestResolutionChain:
             did_doc_called = True
             return alice_keys["public_key"]
 
-        monkeypatch.setattr(
-            "seal.federation.resolve_via_did_document", mock_did_document
-        )
+        monkeypatch.setattr("seal.federation.resolve_via_did_document", mock_did_document)
 
         # Provide a bad did:key so it fails, but did:web resolves
         result = resolve_trust_anchor(
@@ -481,9 +473,7 @@ class TestFederatedVerify:
         def mock_did_document(did, **kwargs):
             return alice_keys["public_key"]
 
-        monkeypatch.setattr(
-            "seal.federation.resolve_via_did_document", mock_did_document
-        )
+        monkeypatch.setattr("seal.federation.resolve_via_did_document", mock_did_document)
 
         result = vpe_federated_verify(
             signed.envelope,

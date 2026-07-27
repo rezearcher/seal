@@ -164,8 +164,15 @@ def vpe_sign(
     """
     sk = _load_private_key(private_key)
     envelope = _build_envelope(
-        prompt, scope, issuer, audience, doc_sha256,
-        ttl_seconds, nonce, counter, cert_chain=cert_chain,
+        prompt,
+        scope,
+        issuer,
+        audience,
+        doc_sha256,
+        ttl_seconds,
+        nonce,
+        counter,
+        cert_chain=cert_chain,
     )
     # vpe_sign always includes cert_chain even when None (backward compat)
     envelope.setdefault("cert_chain", cert_chain)
@@ -302,8 +309,14 @@ def vpe_sign_hmac(
         raise ValueError("shared_secret must be non-empty bytes")
 
     envelope = _build_envelope(
-        prompt, scope, issuer, audience, doc_sha256,
-        ttl_seconds, nonce, counter,
+        prompt,
+        scope,
+        issuer,
+        audience,
+        doc_sha256,
+        ttl_seconds,
+        nonce,
+        counter,
     )
     canon = _canonical_json(envelope)
     envelope["signature"] = hmac.new(shared_secret, canon, hashlib.sha256).hexdigest()

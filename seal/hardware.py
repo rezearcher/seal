@@ -216,9 +216,7 @@ class YubiKeyPIVProvider(HsmProvider):
                     exc.returncode,
                     exc.stderr.strip(),
                 )
-                raise HsmError(
-                    f"YubiKey PIV key generation failed: {exc.stderr.strip()}"
-                ) from exc
+                raise HsmError(f"YubiKey PIV key generation failed: {exc.stderr.strip()}") from exc
             except subprocess.TimeoutExpired:
                 logger.error("YubiKey PIV key generation timed out after 30s")
                 raise HsmError("YubiKey PIV key generation timed out after 30s")
@@ -273,9 +271,7 @@ class YubiKeyPIVProvider(HsmProvider):
                     exc.returncode,
                     exc.stderr.strip(),
                 )
-                raise HsmError(
-                    f"YubiKey PIV signing failed: {exc.stderr.strip()}"
-                ) from exc
+                raise HsmError(f"YubiKey PIV signing failed: {exc.stderr.strip()}") from exc
             except subprocess.TimeoutExpired:
                 logger.error("YubiKey PIV signing timed out after 30s")
                 raise HsmError("YubiKey PIV signing timed out after 30s")
@@ -593,9 +589,7 @@ class SecureEnclaveProvider(HsmProvider):
                 exc.returncode,
                 exc.stderr.strip(),
             )
-            raise HsmError(
-                f"Secure Enclave key generation failed: {exc.stderr.strip()}"
-            ) from exc
+            raise HsmError(f"Secure Enclave key generation failed: {exc.stderr.strip()}") from exc
         except subprocess.TimeoutExpired:
             logger.error("Secure Enclave key generation timed out after 30s")
             raise HsmError("Secure Enclave key generation timed out after 30s")
@@ -659,9 +653,7 @@ class SecureEnclaveProvider(HsmProvider):
                     exc.returncode,
                     exc.stderr.strip(),
                 )
-                raise HsmError(
-                    f"Secure Enclave signing failed: {exc.stderr.strip()}"
-                ) from exc
+                raise HsmError(f"Secure Enclave signing failed: {exc.stderr.strip()}") from exc
             except subprocess.TimeoutExpired:
                 logger.error("Secure Enclave signing timed out after 30s")
                 raise HsmError("Secure Enclave signing timed out after 30s")

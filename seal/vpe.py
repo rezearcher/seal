@@ -14,8 +14,8 @@ import time
 from typing import Any
 
 from seal._base import (
-    VPE_VERSION,
     _ENVELOPE_FIELDS,
+    VPE_VERSION,
     _canonical_json,
 )
 
