@@ -146,7 +146,9 @@ class DivisionVPESigner:
                 to control the path in tests. Pass None to fall back to an
                 in-memory set (no cross-restart protection).
         """
-        self._key_dir = key_dir or os.path.expanduser("~/.hermes/vpe-keys/")
+        # Expand ~ in key_dir — both provided path and default may contain literal tildes
+        # from YAML config or env vars, which should not create "~" directories in CWD.
+        self._key_dir = os.path.expanduser(key_dir or "~/.hermes/vpe-keys/")
         self._agent_name = agent_name
         self._mode = mode
 

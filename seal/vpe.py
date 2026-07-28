@@ -376,6 +376,9 @@ def vpe_verify(
 
 
 def save_keypair(private_key: bytes, public_key: bytes, path: str) -> None:
+    # Expand ~ to home directory — YAML config and env vars may contain literal tildes
+    # which should not create "~" directories in the current working directory.
+    path = os.path.expanduser(path)
     os.makedirs(path, exist_ok=True)
     priv_path = os.path.join(path, "vpe_private.key")
     pub_path = os.path.join(path, "vpe_public.key")
@@ -396,6 +399,9 @@ def load_keypair(path: str) -> tuple[bytes, bytes]:
 
 
 def load_or_generate_keypair(path: str) -> tuple[bytes, bytes]:
+    # Expand ~ to home directory — YAML config and env vars may contain literal tildes
+    # which should not create "~" directories in the current working directory.
+    path = os.path.expanduser(path)
     priv_path = os.path.join(path, "vpe_private.key")
     if os.path.exists(priv_path):
         return load_keypair(path)

@@ -101,6 +101,13 @@ def _load_config() -> dict[str, Any]:
         sec = cfg.get("security", {}) or {}
         vpe_cfg = sec.get("vpe", {}) or {}
         config.update(vpe_cfg)
+        # Expand ~ in vpe_key_dir — YAML does not expand tilde,
+        # so "~/.hermes/vpe-keys/" from config.yaml would otherwise
+        # remain a literal tilde and create rogue directories in
+        # whatever CWD the process runs from (e.g. kanban worktrees).
+        kd = config.get("vpe_key_dir")
+        if kd:
+            config["vpe_key_dir"] = os.path.expanduser(kd)
     except (ImportError, Exception) as exc:
         logger.debug("VPE: couldn't load Hermes config: %s", exc)
 
@@ -116,6 +123,9 @@ def _load_config() -> dict[str, Any]:
         if v:
             if k == "vpe_skip_tools" and isinstance(v, str):
                 config[k] = [t.strip() for t in v.split(",") if t.strip()]
+            elif k == "vpe_key_dir" and isinstance(v, str):
+                # Expand ~ in env var override too (matching YAML config expansion at line 110)
+                config[k] = os.path.expanduser(v)
             else:
                 config[k] = v
 
