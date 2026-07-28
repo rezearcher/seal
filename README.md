@@ -81,7 +81,7 @@ Seal has three subsystems:
 |-----------|-------------|--------|
 | **VPE Core** | Ed25519/HMAC sign/verify, multi-sig, cert chains, hardware signing, canonical JSON | `seal/core.py`, `seal/vpe.py` |
 | **EPD Scanner** | Two-pass regex (91%+) + LLM, Unicode-smuggling defense (T11), fuzzer | `seal/epd/` |
-| **Secrets Broker** | Fernet-encrypted credential store (`seal/credential_store.py`), placeholder resolution, audit log. **Note:** `seal/secrets_broker.py` is a legacy plaintext path — see Security notes below. | `seal/broker.py`, `seal/credential_store.py` |
+| **Secrets Broker** | Fernet-encrypted credential store (`seal/credential_store.py`), placeholder resolution, audit log. | `seal/broker.py`, `seal/credential_store.py` |
 | **Key lifecycle** | SQLite key registry, rotation daemon, persistent nonce/counter stores | `seal/key_manager.py`, `seal/key_store.py`, `seal/store.py` |
 | **Hardware / Federation / Rollback** | HSM signing; cross-agent trust; one-toggle rollback | `seal/hardware.py`, `seal/federation.py`, `seal/rollback.py` |
 | **CLI** | 18 commands: `genkey`, `sign`, `verify`, `secrets`, `key`, `audit`, `rollback`, `hardware`, `fuzz`, `status` | `seal/cli.py` |
@@ -210,7 +210,6 @@ Sign in TS      → Verify in Python / Go / Rust
 
 - **Private keys encrypted at rest:** Private keys stored in `seal/key_manager.py` are encrypted with **Fernet** (`cryptography.fernet.Fernet`) before writing to the SQLite registry at `~/.seal/keys.db`. A Fernet master key is auto-generated at `~/.seal/master.key` on first use. Legacy unencrypted keys are auto-migrated on read with a warning. All filesystem access to `~/.seal/` should still be protected with appropriate permissions.
 - **TTL enforcement requires `iat`:** TTL expiry is only enforced when the `iat` (issued-at) field is present in the envelope. Envelopes created by `vpe_sign` always include `iat`; legacy envelopes without `iat` are treated as having no expiry.
-- **Two credential store paths exist — only one is encrypted:** `seal/credential_store.py` (`seal.credential_store.CredentialStore`) uses Fernet encryption at rest and is the recommended path. `seal/secrets_broker.py` contains a legacy `CredentialStore` that stores credentials as **plaintext JSON** at `~/.hermes/secrets.json` — it is deprecated and will emit a `DeprecationWarning` on import. Use `seal.broker` and `seal.credential_store` for new code.
 
 ## Development
 

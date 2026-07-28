@@ -40,7 +40,8 @@ class CredentialStoreCorruptedError(CredentialStoreError):
     """Alias for :exc:`CredentialStoreError` raised on corrupt or unreadable stores.
 
     Retained for compatibility with code that was migrated from the legacy
-    ``seal.secrets_broker.CredentialStoreCorruptedError``.
+    ``CredentialStoreCorruptedError`` (previously in ``seal.secrets_broker``,
+    removed in t_7fd8f2ce).
     """
 
 
