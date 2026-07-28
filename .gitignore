@@ -57,3 +57,6 @@ install_*.txt
 ops-docs-leak-report.md
 recon/
 test
+.kanban/
+.hermes/
+.worktrees/
