@@ -339,10 +339,11 @@ project:
   plugin that wraps MCP tool calls with VPE verification
 - **Division memory signing**: `seal/integration/division_vpe_signer.py` —
   signs MCP memory_remember episodes for audit trail
-- **EPD scanner**: `seal/epd.py` — two-pass injection detection
+- **EPD scanner**: `seal/epd/` — two-pass injection detection
   (regex + LLM) for unsigned prompts
-- **Secrets Broker**: `seal/secrets_broker.py` — credential proxy that
-  integrates with VPE scope
+- **Secrets Broker**: `seal/broker.py` — credential proxy that
+  integrates with VPE scope (backed by `seal/credential_store.py`;
+  the old `seal/secrets_broker.py` was deleted in `t_7fd8f2ce`)
 
 Path: ~/projects/seal/
 
