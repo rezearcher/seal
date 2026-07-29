@@ -33,10 +33,13 @@ Usage:
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
+import socket
 import time
+import urllib.parse
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -45,8 +48,75 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-DIVISION_BASE_URL = os.getenv("DIVISION_BASE_URL", "http://localhost:7070")
-"""Base URL for Division's HTTP API."""
+
+def _is_private_ip(ip_str: str) -> bool:
+    """Return True if *ip_str* is loopback, link-local, or RFC 1918 private."""
+    try:
+        addr = ipaddress.ip_address(ip_str)
+        return addr.is_private or addr.is_loopback or addr.is_link_local
+    except ValueError:
+        return False
+
+
+def _resolve_host(hostname: str) -> list[str]:
+    """Resolve hostname to a deduplicated list of IP address strings."""
+    try:
+        addrs = socket.getaddrinfo(hostname, None)
+        return list({str(a[4][0]) for a in addrs})
+    except socket.gaierror:
+        return []
+
+
+def _validate_division_url(url: str, *, env_key: str = "DIVISION_BASE_URL") -> str:
+    """Validate that the Division URL resolves to a private/local address.
+
+    Security hardening: prevents silent exfiltration of audit records to a
+    public URL if an attacker controls the ``DIVISION_BASE_URL`` environment
+    variable.
+
+    Returns the original *url* when it resolves to a safe address, otherwise
+    logs a warning and returns the safe default ``http://localhost:7070``.
+    """
+    parsed = urllib.parse.urlparse(url)
+    hostname = parsed.hostname
+
+    if not hostname:
+        logger.warning("%s has no hostname, falling back to default", env_key)
+        return "http://localhost:7070"
+
+    # Explicit localhost names bypass resolution (always safe).
+    if hostname in ("localhost", "127.0.0.1", "::1"):
+        return url
+
+    resolved = _resolve_host(hostname)
+    if not resolved:
+        logger.warning(
+            "%s hostname %r could not be resolved, falling back to default",
+            env_key,
+            hostname,
+        )
+        return "http://localhost:7070"
+
+    for ip in resolved:
+        if not _is_private_ip(ip):
+            logger.warning(
+                "%s resolves to public IP %s (hostname=%r, url=%s). "
+                "Falling back to http://localhost:7070 to prevent data exfiltration.",
+                env_key,
+                ip,
+                hostname,
+                url,
+            )
+            return "http://localhost:7070"
+
+    return url
+
+
+DIVISION_BASE_URL = _validate_division_url(
+    os.getenv("DIVISION_BASE_URL", "http://localhost:7070"),
+)
+"""Base URL for Division's HTTP API. Validated at import time — see
+:_func:`_validate_division_url` for the security check logic."""
 
 AUDIT_CONVERSATION_ID = "seal-audit"
 """Dedicated Division conversation for VPE verification audit records."""
