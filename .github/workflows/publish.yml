@@ -38,4 +38,5 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          password: ${{ secrets.PYPI_TOKEN || '' }}
           repository-url: ${{ github.event.inputs.environment == 'testpypi' && 'https://test.pypi.org/legacy/' || '' }}
