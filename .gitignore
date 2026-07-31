@@ -60,3 +60,8 @@ test
 .kanban/
 .hermes/
 .worktrees/
+
+# Test artifacts
+.coverage
+htmlcov/
+.pytest_cache/
