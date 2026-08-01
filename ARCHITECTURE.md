@@ -117,7 +117,7 @@ A verified prompt is a JSON wrapper with Ed25519 signature:
 ## What Already Exists (Rez's prior work)
 - **Membrane** (Night Agent): Ed25519 Tickets per-action, chained Receipts — action-level, VPE is prompt-level, complementary
 - **TRUSTBAC**: RBAC+ABAC+ReBAC+RAdAC authorization framework — VPE is prompt authentication, complementary
-- **Division injection scanning gap**: write-time scanning identified but not implemented (low effort, high impact)
+- **Division injection scanning gap**: closed by the write-time EPD gate (G03 — `seal/epd/write_gate.py`, see EPD table below)
 - **Hermes skills guard**: 120+ regex patterns — reactive, no crypto
 
 ## Industry Gap Analysis
@@ -159,6 +159,7 @@ A verified prompt is a JSON wrapper with Ed25519 signature:
 | `seal/epd/llm_classifier.py` | 145 | LLM tiebreaker / `llm_scan_all` catch-all pass (independent model) | `test_epd.py` |
 | `seal/epd/fuzzer.py` | 960 | Pattern-mutation fuzzer, `seal fuzz` (P7.1 adversarial). Mutation-strategy + composite loops log a `logger.warning` on per-strategy failure rather than silently `continue` (t_ed914b66 / t_0b226fe3, e29288d) | `test_epd.py` |
 | `seal/epd/{config,models}.py` | 147 | `EPDConfig`, `EPDFlag`, `EPDResult` | `test_epd.py` |
+| `seal/epd/write_gate.py` | 260 | **Write-time injection gate (G03).** `WriteGate` wraps any `write_*` tool with a config-driven pre-scan (`EPDConfig.block_threshold`, optional LLM pass via `llm_scan_all`), four policies (scan-before-write, block-on-threshold, redact-sensitive spans, throw `WriteBlockedError` on hard block); `redact_spans`/`scan_before_write` public helpers | `test_write_gate.py` (40+) |
 
 ### Secrets Broker — credentials out of context (Phase 3)
 | Module | LOC | Provides | Tests |
