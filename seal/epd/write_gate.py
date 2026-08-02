@@ -41,10 +41,11 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from seal.epd.config import EPDConfig
 from seal.epd.models import EPDResult
@@ -62,7 +63,7 @@ class WriteBlockedError(Exception):
     flags without re-scanning.
     """
 
-    def __init__(self, decision: "WriteDecision", message: str | None = None) -> None:
+    def __init__(self, decision: WriteDecision, message: str | None = None) -> None:
         self.decision = decision
         super().__init__(
             message
@@ -147,7 +148,7 @@ class WriteGate:
         config: EPDConfig | None = None,
         policy: str = "block",
         quarantine_dir: str | os.PathLike[str] | None = None,
-        on_decision: Callable[["WriteDecision"], Any] | None = None,
+        on_decision: Callable[[WriteDecision], Any] | None = None,
     ) -> None:
         if policy not in POLICIES:
             raise ValueError(f"policy must be one of {POLICIES}, got {policy!r}")
@@ -230,7 +231,7 @@ class WriteGate:
     def _quarantine(self, content: str) -> Path:
         assert self.quarantine_dir is not None  # enforced in __init__
         self.quarantine_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         digest = hashlib.sha1(content.encode("utf-8")).hexdigest()[:8]
         path = self.quarantine_dir / f"quarantine-{stamp}-{digest}.txt"
         header = (
@@ -248,7 +249,7 @@ def scan_before_write(
     config: EPDConfig | None = None,
     policy: str = "block",
     quarantine_dir: str | os.PathLike[str] | None = None,
-    on_decision: Callable[["WriteDecision"], Any] | None = None,
+    on_decision: Callable[[WriteDecision], Any] | None = None,
 ) -> WriteDecision:
     """One-shot helper: build a gate and run :meth:`WriteGate.write`."""
     gate = WriteGate(
