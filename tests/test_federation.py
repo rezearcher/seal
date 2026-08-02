@@ -1274,6 +1274,62 @@ class TestExtractEd25519FromDIDDocument:
         assert result == test_key
 
 
+class TestJWKDecodeLogging:
+    """Debug logging for malformed JWK entries during DID-document key extraction."""
+
+    @staticmethod
+    def _doc_with_jwk(jwk):
+        return {
+            "verificationMethod": [
+                {
+                    "id": "did:web:example.com#key-1",
+                    "type": "Ed25519VerificationKey2018",
+                    "controller": "did:web:example.com",
+                    "publicKeyJwk": jwk,
+                }
+            ]
+        }
+
+    def test_invalid_base64_jwk_logs_debug(self, caplog):
+        """Malformed base64 in JWK 'x' triggers a debug log and yields no key."""
+        import logging
+
+        from seal.federation import _extract_ed25519_from_did_document
+
+        doc = self._doc_with_jwk({"crv": "Ed25519", "kty": "OKP", "x": "!!!not-base64!!!"})
+        with caplog.at_level(logging.DEBUG, logger="seal.federation"):
+            result = _extract_ed25519_from_did_document(doc)
+        assert result is None
+        assert "JWK key-format decode failed" in caplog.text
+        assert "Ed25519" in caplog.text
+
+    def test_wrong_length_jwk_skipped_silently(self, caplog):
+        """Valid base64 decoding to the wrong key length is skipped without a log."""
+        import base64
+        import logging
+
+        from seal.federation import _extract_ed25519_from_did_document
+
+        short_x = base64.urlsafe_b64encode(b"\x00" * 16).decode("ascii")
+        doc = self._doc_with_jwk({"crv": "Ed25519", "kty": "OKP", "x": short_x})
+        with caplog.at_level(logging.DEBUG, logger="seal.federation"):
+            result = _extract_ed25519_from_did_document(doc)
+        assert result is None
+        assert "JWK key-format decode failed" not in caplog.text
+
+    def test_missing_x_jwk_skipped_silently(self, caplog):
+        """A JWK without an 'x' member is skipped without a log."""
+        import logging
+
+        from seal.federation import _extract_ed25519_from_did_document
+
+        doc = self._doc_with_jwk({"crv": "Ed25519", "kty": "OKP"})
+        with caplog.at_level(logging.DEBUG, logger="seal.federation"):
+            result = _extract_ed25519_from_did_document(doc)
+        assert result is None
+        assert "JWK key-format decode failed" not in caplog.text
+
+
 class TestResolveViaDIDDocument:
     def test_unsupported_method_raises(self):
         """Unsupported DID method raises FederationError."""

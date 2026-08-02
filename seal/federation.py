@@ -14,6 +14,7 @@ is file-based by default.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import random
 import re
@@ -29,6 +30,8 @@ from cryptography.exceptions import InvalidSignature
 from seal._base import _load_private_key, _load_public_key
 from seal.audit import AuditLog
 from seal.core import vpe_sign, vpe_verify
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -791,7 +794,13 @@ def _extract_ed25519_from_did_document(doc: dict, expected_did: str = "") -> byt
                         key_bytes = _base64.urlsafe_b64decode(x_b64)
                         if len(key_bytes) == 32:
                             return key_bytes
-                    except Exception:
+                    except Exception as exc:
+                        logger.debug(
+                            "JWK key-format decode failed (vm_type=%s, crv=%s): %s",
+                            vm_type,
+                            crv,
+                            exc,
+                        )
                         continue
 
         # --- Multikey (W3C CCG 2023) with Ed25519 multicodec ---
