@@ -750,8 +750,10 @@ def _load_ec_pubkey_from_pem(pem_path: str) -> bytes:
 
     try:
         key = serialization.load_pem_public_key(pem_data)
-    except Exception:
-        # Some tools export SubjectPublicKeyInfo differently
+    except (ValueError, TypeError) as exc:
+        # Some tools export SubjectPublicKeyInfo differently; log the
+        # original PEM parse error before falling back to DER parsing.
+        logger.debug("PEM public key parse failed (%s); retrying as DER", exc)
         key = serialization.load_der_public_key(pem_data)
     if not isinstance(key, ecc.EllipticCurvePublicKey):
         raise ValueError("PEM does not contain an EC public key")
@@ -784,7 +786,9 @@ def verify_ecdsa_p256(
     """
     try:
         pk = serialization.load_der_public_key(public_key_der)
-    except Exception:
+    except (ValueError, TypeError):
+        # Malformed/unsupported key material fails closed. Only expected
+        # load failures are caught here; genuine internal bugs propagate.
         return False
 
     if not isinstance(pk, ec.EllipticCurvePublicKey):
