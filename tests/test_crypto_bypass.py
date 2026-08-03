@@ -215,19 +215,13 @@ class TestKeyConfusion:
         """Verify with a key that's not 32 bytes (Ed25519 requirement)."""
         for bad_len in [0, 1, 16, 31, 33, 64, 128]:
             bad_key = b"\x00" * bad_len
-            try:
-                result = vpe_verify(valid_envelope, public_key=bad_key)
-            except Exception:
-                result = {"valid": False, "reason": "exception"}
-            assert result["valid"] is False, f"key of len {bad_len} must fail"
+            with pytest.raises(Exception):
+                vpe_verify(valid_envelope, public_key=bad_key)
 
     def test_empty_key(self, alice_keys, valid_envelope):
         """Empty bytes as public key."""
-        try:
-            result = vpe_verify(valid_envelope, public_key=b"")
-        except Exception:
-            result = {"valid": False, "reason": "exception"}
-        assert result["valid"] is False
+        with pytest.raises(Exception):
+            vpe_verify(valid_envelope, public_key=b"")
 
     def test_all_zeros_key(self, alice_keys, valid_envelope):
         """All-zero 32-byte key (the low-order point in Ed25519)."""
