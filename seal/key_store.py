@@ -196,8 +196,10 @@ class KeyStore:
 
         conn = self._conn()
 
-        # If there's an active key for this label, demote to expiring
-        existing_active = self.get_active_key(label)
+        # If there's an active key for this label, demote to expiring.
+        # Evaluate against the caller's time context so demotion is
+        # deterministic under a supplied `now` (e.g. in tests).
+        existing_active = self.get_active_key(label, now=now)
         if existing_active is not None:
             conn.execute(
                 "UPDATE keys SET status = 'expiring' WHERE key_id = ?",
