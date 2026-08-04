@@ -15,30 +15,26 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import random
 import re
 import socket
 import struct
-import threading
-from collections import OrderedDict
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 
-from cryptography.exceptions import InvalidSignature
-
-from seal._base import _load_private_key, _load_public_key
-from seal.audit import AuditLog
 from seal.core import vpe_sign, vpe_verify
-
 from seal.federation_store import (
-    FederationError,
     FederationAuditLog,
+    FederationError,
     TrustAnchorRegistry,
-    _TRUST_BUNDLE_FIELDS,
-    _canonical_trust_bundle,
-    export_trust_bundle,
-    import_trust_bundle,
+)
+from seal.federation_store import (
+    _canonical_trust_bundle as _canonical_trust_bundle,
+)
+from seal.federation_store import (
+    export_trust_bundle as export_trust_bundle,
+)
+from seal.federation_store import (
+    import_trust_bundle as import_trust_bundle,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,8 +70,6 @@ _DNS_FLAG_TC = 0x0200  # Truncated response
 _DNS_RCODE_NXDOMAIN = 3
 _DNS_TYPE_TXT = 16
 _DNS_CLASS_IN = 1
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -125,10 +119,6 @@ def _base58btc_decode(s: str) -> bytes:
 
     # Prepend leading zeros
     return b"\x00" * leading_ones + bytes(result)
-
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -808,19 +798,6 @@ def resolve_via_did_document(
 
     else:
         raise FederationError(f"Unsupported DID method: {did!r} — supported methods: did:web:, did:ion:")
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ---------------------------------------------------------------------------

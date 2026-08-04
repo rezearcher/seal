@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from seal.key_store import KeyStore, KeyInfo
+from seal.key_store import KeyInfo, KeyStore
 
 NOW = 1_700_000_000
 DAY = 86_400
@@ -256,7 +256,7 @@ def test_needs_rotation_flags_upcoming_and_past(store):
     far = _gen(store, label="far", not_after=NOW + 60 * DAY, rotation_days=30, now=NOW)
 
     flagged = {k.label for k in store.needs_rotation(now=NOW)}
-    assert flagged == {"soon", "at"}
+    assert flagged == {soon.label, at_window.label}
     assert far.label not in flagged
 
 
@@ -355,8 +355,7 @@ def test_keyinfo_revoked_never_valid():
 
 
 def test_keyinfo_to_dict():
-    info = _info(key_id="abc", public_key=b"\x00" * 32, private_key=b"\x01" * 32,
-                 rotation_days=30, not_after=0)
+    info = _info(key_id="abc", public_key=b"\x00" * 32, private_key=b"\x01" * 32, rotation_days=30, not_after=0)
     d = info.to_dict()
     assert d == {
         "key_id": "abc",

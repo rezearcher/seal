@@ -5,8 +5,6 @@ Uses SoftwareSimProvider for testing without actual hardware.
 
 import hashlib
 import json
-import os
-import platform
 import shutil
 import subprocess
 from pathlib import Path
@@ -522,7 +520,9 @@ class TestTPMProvider:
         monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/tpm2_createprimary")
         monkeypatch.setattr(hardware.os.path, "exists", lambda p: True)
         monkeypatch.setattr(
-            hardware.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(subprocess.TimeoutExpired(["tpm2_getcap"], 5))
+            hardware.subprocess,
+            "run",
+            lambda *a, **k: (_ for _ in ()).throw(subprocess.TimeoutExpired(["tpm2_getcap"], 5)),
         )
         assert TPMProvider.detect() is False
 
@@ -672,7 +672,9 @@ class TestSecureEnclave:
         monkeypatch.setattr(hardware.platform, "system", lambda: "Darwin")
         monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/security")
         monkeypatch.setattr(
-            hardware.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(subprocess.TimeoutExpired(["security"], 5))
+            hardware.subprocess,
+            "run",
+            lambda *a, **k: (_ for _ in ()).throw(subprocess.TimeoutExpired(["security"], 5)),
         )
         assert SecureEnclaveProvider.detect() is False
 

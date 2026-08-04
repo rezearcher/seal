@@ -200,7 +200,7 @@ class TestCmdDisable:
     def test_preserves_vpe_mode(self, homes):
         seal_home, hermes_home = homes
         _write_config(hermes_home, _vpe_config(enabled=True))
-        report = rollback.cmd_disable()
+        report = rollback.cmd_disable()  # noqa: F841
         cfg = _read_config(hermes_home)
         assert cfg["security"]["vpe"]["vpe_mode"] == "enforce"
 
@@ -326,7 +326,7 @@ class TestCmdRollback:
     def test_rollback_removes_empty_security_section(self, homes):
         seal_home, hermes_home = homes
         _write_config(hermes_home, {"security": {"vpe": {"vpe_enabled": True}}, "other": 1})
-        report = rollback.cmd_rollback()
+        report = rollback.cmd_rollback()  # noqa: F841
         cfg = _read_config(hermes_home)
         assert "security" not in cfg
         assert cfg["other"] == 1

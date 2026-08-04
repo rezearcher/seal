@@ -9,16 +9,17 @@ existing imports keep working.
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import threading
 from collections import OrderedDict
+from dataclasses import dataclass, field
 from pathlib import Path
+
 from cryptography.exceptions import InvalidSignature
+
 from seal._base import _load_private_key, _load_public_key
 from seal.audit import AuditLog
-from dataclasses import dataclass, field
-
 
 DEFAULT_REGISTRY_PATH = "~/.seal/trust_anchors.json"
 

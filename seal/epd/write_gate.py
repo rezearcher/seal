@@ -108,9 +108,7 @@ def _merge_spans(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
     return merged
 
 
-def redact_spans(
-    text: str, spans: list[tuple[int, int]], placeholder: str = REDACT_PLACEHOLDER
-) -> str:
+def redact_spans(text: str, spans: list[tuple[int, int]], placeholder: str = REDACT_PLACEHOLDER) -> str:
     """Replace the given character spans in ``text`` with ``placeholder``.
 
     Spans are merged first; replacements are applied from the end backwards so
@@ -200,9 +198,7 @@ class WriteGate:
             raise WriteBlockedError(decision)
         if decision.action == "quarantined":
             qpath = self._quarantine(content)
-            return WriteDecision(
-                "quarantined", decision.result, quarantine_path=str(qpath)
-            )
+            return WriteDecision("quarantined", decision.result, quarantine_path=str(qpath))
         # allowed or sanitized
         payload = decision.content
         if callable(target):
