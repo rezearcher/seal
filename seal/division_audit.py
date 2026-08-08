@@ -264,36 +264,14 @@ class _DivisionClient:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _post(self, path: str, body: dict) -> dict | None:
-        """POST JSON to Division and return parsed response."""
-        import urllib.error
-        import urllib.request
-
-        url = f"{self.base_url}{path}"
-        data = json.dumps(body).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=data,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            logger.warning(
-                "Division HTTP %s on POST %s: %s",
-                exc.code,
-                path,
-                exc.read().decode()[:200],
-            )
-            return None
-        except (urllib.error.URLError, OSError, ValueError) as exc:
-            logger.warning("Division connection error on POST %s: %s", path, exc)
-            return None
-
-    def _get(self, path: str, params: dict | None = None) -> dict | None:
-        """GET from Division and return parsed response."""
+    def _request(
+        self,
+        method: str,
+        path: str,
+        body: dict | None = None,
+        params: dict | None = None,
+    ) -> dict | None:
+        """Send a JSON request to Division and return parsed response."""
         import urllib.error
         import urllib.parse
         import urllib.request
@@ -302,21 +280,35 @@ class _DivisionClient:
         if params:
             qs = urllib.parse.urlencode(params)
             url = f"{url}?{qs}"
-        req = urllib.request.Request(url, method="GET")
+        data = None
+        headers: dict[str, str] = {}
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+            headers = {"Content-Type": "application/json"}
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             logger.warning(
-                "Division HTTP %s on GET %s: %s",
+                "Division HTTP %s on %s %s: %s",
                 exc.code,
+                method,
                 path,
                 exc.read().decode()[:200],
             )
             return None
         except (urllib.error.URLError, OSError, ValueError) as exc:
-            logger.warning("Division connection error on GET %s: %s", path, exc)
+            logger.warning("Division connection error on %s %s: %s", method, path, exc)
             return None
+
+    def _post(self, path: str, body: dict) -> dict | None:
+        """POST JSON to Division and return parsed response."""
+        return self._request("POST", path, body=body)
+
+    def _get(self, path: str, params: dict | None = None) -> dict | None:
+        """GET from Division and return parsed response."""
+        return self._request("GET", path, params=params)
 
     # ------------------------------------------------------------------
     # Memory API
