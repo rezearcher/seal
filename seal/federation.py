@@ -933,8 +933,8 @@ def vpe_federated_sign(
             counter=counter,
             private_key=private_key,
         )
-    except Exception as exc:
-        return FederatedSignResult(error=str(exc))
+    except (ValueError, TypeError, OverflowError) as exc:
+        return FederatedSignResult(error=f"{type(exc).__name__}: {str(exc)}")
 
     # Extract nonce for audit correlation
     import json as _json
