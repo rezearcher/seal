@@ -46,17 +46,37 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 try:
-    from seal.epd import EPDResult, epd_scan
-    from seal.vpe import (
-        VPEResult,
-        vpe_verify,
-    )
+    from seal.epd import EPDConfig, EPDResult
+    from seal.epd import scan as epd_scan
+    from seal.vpe import VPEResult, vpe_verify
 
     _SEAL_AVAILABLE = True
 except ImportError:
     _SEAL_AVAILABLE = False
-    VPEResult = None  # type: ignore
-    EPDResult = None  # type: ignore
+
+    class VPEResult:  # type: ignore
+        """Fallback stub for when seal is not available."""
+
+        def __init__(self, valid: bool, reason: str = ""):
+            self.valid = valid
+            self.reason = reason
+
+    class EPDResult:  # type: ignore
+        """Fallback stub for when seal is not available."""
+
+        def __init__(self, clean: bool = True):
+            self.clean = clean
+            self.flags = []
+            self.llm_used = False
+
+        @property
+        def max_confidence(self) -> float:
+            """Highest confidence among flags (0.0 when there are none)."""
+            return max((f.confidence for f in self.flags), default=0.0)
+
+    # Stubs for degraded path
+    EPDConfig = None  # type: ignore
+    epd_scan = None  # type: ignore
 
 
 # ---------------------------------------------------------------------------
@@ -138,10 +158,8 @@ class VPEGuardChain:
             empty = EPDResult(clean=True)
             return empty
 
-        return epd_scan(
-            prompt,
-            min_confidence=self._epd_min_confidence,
-        )
+        config = EPDConfig(block_threshold=self._epd_min_confidence)
+        return epd_scan(prompt, config=config)
 
     # ------------------------------------------------------------------
     # Stage 3: Scope Check
@@ -235,7 +253,7 @@ class VPEGuardChain:
         # Stage 2: EPD
         if prompt:
             epd_result = self.check_epd(prompt)
-            stages["epd"] = epd_result.to_dict()
+            stages["epd"] = self._serialize_epd_result(epd_result)
             if not epd_result.clean:
                 flag_names = [f.pattern_name for f in epd_result.flags]
                 reason = f"EPD: injection detected ({', '.join(flag_names)})"
@@ -258,6 +276,24 @@ class VPEGuardChain:
             stages["scope"] = {"valid": True, "reason": "no envelope"}
 
         return self._decision("allow", "all checks passed", stages)
+
+    def _serialize_epd_result(self, result: EPDResult) -> dict[str, Any]:
+        """Serialize EPDResult to a dict for inclusion in the check_all response."""
+        return {
+            "clean": result.clean,
+            "max_confidence": result.max_confidence,
+            "llm_used": result.llm_used,
+            "flag_count": len(result.flags),
+            "flags": [
+                {
+                    "pattern_name": f.pattern_name,
+                    "confidence": f.confidence,
+                    "category": f.category,
+                    "source": f.source,
+                }
+                for f in result.flags
+            ],
+        }
 
     def _decision(self, verdict: str, reason: str, stages: dict[str, Any]) -> dict[str, Any]:
         """Build a decision dict."""
