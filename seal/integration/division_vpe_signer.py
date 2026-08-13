@@ -424,16 +424,33 @@ class DivisionVPESigner:
         if isinstance(envelope_data, dict) and envelope_data:
             embedded_sig = envelope_data.get("signature", "")
             if embedded_sig and signature != embedded_sig:
-                return VPEResult(
+                result = VPEResult(
                     False,
                     "signed wrapper signature mismatch: outer signature does not match envelope",
                 )
+                self._record_audit(envelope_data, False, "verify", reason=result.reason)
+                return result
 
         # Try verifying using the stored envelope first
         if envelope_data:
             try:
                 pk = value.get("public_key", "")
                 pub_key = bytes.fromhex(pk) if pk else self._public_key
+
+                # Bind the stored value to the signed envelope content: the
+                # envelope prompt holds a JSON serialization of the value, so a
+                # wrapper whose value field no longer re-serializes to that
+                # exact string was tampered with after signing.
+                expected_value = json.loads(envelope_data.get("prompt", "")).get("value")
+                if expected_value is not None and "value" in value:
+                    bound_value = json.dumps(value["value"], sort_keys=True)
+                    if bound_value != expected_value:
+                        result = VPEResult(
+                            False,
+                            "signed wrapper value does not match envelope content",
+                        )
+                        self._record_audit(envelope_data, False, "verify", reason=result.reason)
+                        return result
 
                 # Check nonce replay before calling vpe_verify so we can use
                 # the persistent NonceStore (survives restarts) rather than

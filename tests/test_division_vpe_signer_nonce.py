@@ -199,6 +199,30 @@ def test_verify_batch_with_corrupt_signature(keypair_dir, nonce_db):
     assert results[0][1].valid is False
 
 
+def test_verify_stored_value_value_tampered_rejected(keypair_dir, nonce_db):
+    """A wrapper whose value field was tampered after signing is rejected.
+
+    The envelope prompt holds a JSON serialization of the original value, so a
+    value that no longer re-serializes to the signed content must be rejected
+    even though the envelope signature itself is intact.
+    """
+    signer = _make_signer(keypair_dir, nonce_db)
+
+    signed = signer.wrap_for_storage({"payload": {"secret": "original"}}, domain="test", agent="hermes")
+    # Tamper with the stored value after signing
+    signed["value"]["secret"] = "injected"
+
+    verifier = DivisionVPESigner(
+        key_dir=keypair_dir,
+        mode="verify",
+        nonce_store=NonceStore(db_path=nonce_db),
+    )
+    verifier.ensure_keys()
+
+    result = verifier.verify_stored_value(signed)
+    assert result.valid is False
+
+
 def test_set_mode_invalid(keypair_dir):
     """set_mode rejects invalid modes."""
     signer = DivisionVPESigner(key_dir=keypair_dir, mode="bypass")
@@ -229,9 +253,6 @@ def test_wrap_for_storage_bypass_mode(keypair_dir):
 
 def test_wrap_for_storage_unserializable_value(keypair_dir, nonce_db):
     """Unserializable values fall back to unsigned."""
-    import sys
-    from io import StringIO
-
     signer = _make_signer(keypair_dir, nonce_db)
 
     # Create an unserializable object
