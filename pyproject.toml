@@ -74,4 +74,4 @@ omit = ["seal/epd/llm_classifier.py"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 64
+fail_under = 80

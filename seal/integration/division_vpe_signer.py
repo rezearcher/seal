@@ -313,9 +313,12 @@ class DivisionVPESigner:
                 logger.warning("DivisionVPE: cannot sign, no keypair")
                 return value
 
-        # Serialize the value to JSON for signing
+        # Serialize the value to JSON for signing. Strict serialization: values
+        # that cannot be represented losslessly in JSON must NOT be signed (a
+        # signature over a str() repr would bind the envelope to something that
+        # differs from the stored value), so they fall back to unsigned storage.
         try:
-            value_json = json.dumps(value, default=str, sort_keys=True)
+            value_json = json.dumps(value, sort_keys=True)
         except (TypeError, ValueError) as exc:
             logger.warning("DivisionVPE: cannot serialize value for signing: %s", exc)
             return value
@@ -413,6 +416,18 @@ class DivisionVPESigner:
 
         if not signature:
             return VPEResult(False, "signed wrapper has no signature field")
+
+        # The outer signature must match the signature embedded in the stored
+        # envelope. The envelope path below verifies the embedded envelope's own
+        # signature, so without this consistency check a tampered outer
+        # signature (e.g. corrupted in transit) would go undetected.
+        if isinstance(envelope_data, dict) and envelope_data:
+            embedded_sig = envelope_data.get("signature", "")
+            if embedded_sig and signature != embedded_sig:
+                return VPEResult(
+                    False,
+                    "signed wrapper signature mismatch: outer signature does not match envelope",
+                )
 
         # Try verifying using the stored envelope first
         if envelope_data:
