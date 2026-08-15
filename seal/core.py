@@ -10,7 +10,9 @@ from collections import OrderedDict
 from cryptography.exceptions import InvalidSignature
 
 from seal._base import (
-    _ENVELOPE_FIELDS,
+    _ENVELOPE_FIELDS as _ENVELOPE_FIELDS,  # re-export: tests import from seal.core
+)
+from seal._base import (
     HMAC_SIGNATURE_BYTES,
     VPE_VERSION,
     _canonical_json,
@@ -481,23 +483,17 @@ def verify_cert_chain(chain: list, *, trust_anchor: bytes) -> dict:
 # Multi-signature (N-of-M) support
 # ---------------------------------------------------------------------------
 
-_MULTI_ENVELOPE_FIELDS = _ENVELOPE_FIELDS + ["threshold"]
-
-
 def _canonical_json_multi(envelope: dict) -> bytes:
-    ordered = OrderedDict()
-    for field in _MULTI_ENVELOPE_FIELDS:
-        if field == "scope":
-            value = envelope.get("scope", {})
-            if isinstance(value, dict):
-                value = OrderedDict(sorted(value.items()))
-            ordered[field] = value
-        elif field == "threshold":
-            value = envelope.get("threshold")
-            if value is not None:
-                ordered[field] = value
-        else:
-            ordered[field] = envelope.get(field, "")
+    """Deterministic canonical JSON for multi-sig envelopes.
+
+    Delegates the 11 shared envelope fields to ``_canonical_json`` so
+    default/omission semantics stay in a single place, then appends the
+    ``threshold`` field immediately after (omitted when None).
+    """
+    ordered = json.loads(_canonical_json(envelope).decode("utf-8"))
+    threshold = envelope.get("threshold")
+    if threshold is not None:
+        ordered["threshold"] = threshold
     return json.dumps(ordered, separators=(",", ":")).encode("utf-8")
 
 
