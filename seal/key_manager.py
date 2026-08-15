@@ -114,8 +114,8 @@ def _ensure_seal_dir() -> None:
     SEAL_DIR.mkdir(parents=True, exist_ok=True)
     try:
         SEAL_DIR.chmod(0o700)
-    except OSError:  # pragma: no cover - non-POSIX or restricted FS
-        pass
+    except OSError as exc:  # pragma: no cover - non-POSIX or restricted FS
+        log.warning("cannot set 0700 perms on seal dir %s: %s", SEAL_DIR, exc)
 
 
 def _load_or_create_master_key(path: Path | None = None) -> bytes:
@@ -137,8 +137,8 @@ def _load_or_create_master_key(path: Path | None = None) -> bytes:
         os.close(fd)
     try:
         keyfile.chmod(0o600)
-    except OSError:  # pragma: no cover
-        pass
+    except OSError as exc:  # pragma: no cover
+        log.warning("cannot set 0600 perms on keyfile %s: %s", keyfile, exc)
     return key
 
 
@@ -292,8 +292,8 @@ class KeyManager:
         parent.mkdir(parents=True, exist_ok=True)
         try:
             parent.chmod(0o700)
-        except OSError:
-            pass
+        except OSError as exc:  # pragma: no cover - non-POSIX or restricted FS
+            log.warning("cannot set 0700 perms on seal dir %s: %s", parent, exc)
 
         # Resolve the Fernet key.
         if master_key is None:
