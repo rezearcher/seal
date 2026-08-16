@@ -12,7 +12,7 @@ The existing Python reference is at ~/projects/seal/seal/core.py
 
 ## Package structure
 Package name: `vpe`
-Import path: `github.com/seal/vpe-go/vpe`
+Import path: `github.com/rezearcher/seal/vpe-go/vpe`
 
 ## API Surface (exactly matching Python reference)
 
