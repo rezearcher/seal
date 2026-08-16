@@ -32,24 +32,28 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+def _resolve_home(env_var: str, default_dir: str) -> Path:
+    """Resolve ~/<default_dir>, with optional env var override."""
+    override = os.environ.get(env_var)
+    return Path(override) if override else Path.home() / default_dir
+
+
 def _resolve_seal_home() -> Path:
     """Resolve ~/.seal, with optional SEAL_HOME env override."""
-    override = os.environ.get("SEAL_HOME")
-    return Path(override) if override else Path.home() / ".seal"
+    return _resolve_home("SEAL_HOME", ".seal")
 
 
 def _resolve_hermes_home() -> Path:
     """Resolve ~/.hermes, with optional HERMES_HOME env override."""
-    override = os.environ.get("HERMES_HOME")
-    return Path(override) if override else Path.home() / ".hermes"
+    return _resolve_home("HERMES_HOME", ".hermes")
 
 
 def _hermes_config() -> Path:
-    return _resolve_hermes_home() / "config.yaml"
+    return _resolve_home("HERMES_HOME", ".hermes") / "config.yaml"
 
 
 def _seal_dir() -> Path:
-    return _resolve_seal_home()
+    return _resolve_home("SEAL_HOME", ".seal")
 
 
 def _seal_audit() -> Path:
@@ -61,7 +65,7 @@ def _seal_archive() -> Path:
 
 
 def _vpe_keys_hermes() -> Path:
-    return _resolve_hermes_home() / "vpe-keys"
+    return _resolve_home("HERMES_HOME", ".hermes") / "vpe-keys"
 
 
 def _seal_backup_config() -> Path:
