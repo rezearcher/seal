@@ -107,6 +107,7 @@ class HsmProvider(abc.ABC):
     name: ClassVar[str] = ""
     supported_platforms: ClassVar[list[str]] = []
     sig_algorithm: ClassVar[str] = ""
+    _keys: dict[str, HsmKey] = {}
 
     @classmethod
     @abc.abstractmethod
@@ -132,14 +133,14 @@ class HsmProvider(abc.ABC):
         """
         ...
 
-    @abc.abstractmethod
     def get_public_key(self, key_id: str) -> bytes | None:
-        """Retrieve the public key for a key ID, or None if not found."""
-        ...
+        """Return public key bytes for a tracked key, or None if not found."""
+        key = self._keys.get(key_id)
+        return key.public_key if key else None
 
     def list_keys(self) -> list[HsmKey]:
         """List keys managed by this provider."""
-        return []
+        return list(self._keys.values())
 
     def delete_key(self, key_id: str) -> bool:
         """Remove a key record.  Returns True if removed."""
@@ -277,14 +278,6 @@ class YubiKeyPIVProvider(HsmProvider):
                 raise HsmError("YubiKey PIV signing timed out after 30s")
 
             return Path(sig_file).read_bytes()
-
-    def get_public_key(self, key_id: str) -> bytes | None:
-        """Return public key bytes for a tracked key."""
-        key = self._keys.get(key_id)
-        return key.public_key if key else None
-
-    def list_keys(self) -> list[HsmKey]:
-        return list(self._keys.values())
 
 
 # ---------------------------------------------------------------------------
@@ -485,13 +478,6 @@ class TPMProvider(HsmProvider):
 
             return Path(sig_file).read_bytes()
 
-    def get_public_key(self, key_id: str) -> bytes | None:
-        key = self._keys.get(key_id)
-        return key.public_key if key else None
-
-    def list_keys(self) -> list[HsmKey]:
-        return list(self._keys.values())
-
     def delete_key(self, key_id: str) -> bool:
         if key_id in self._keys:
             del self._keys[key_id]
@@ -660,13 +646,6 @@ class SecureEnclaveProvider(HsmProvider):
 
             return Path(sig_file).read_bytes()
 
-    def get_public_key(self, key_id: str) -> bytes | None:
-        key = self._keys.get(key_id)
-        return key.public_key if key else None
-
-    def list_keys(self) -> list[HsmKey]:
-        return list(self._keys.values())
-
 
 # ---------------------------------------------------------------------------
 # Software simulation provider (for testing without hardware)
@@ -721,13 +700,6 @@ class SoftwareSimProvider(HsmProvider):
             raise KeyError(f"Software key not found: {key_id}")
         sk = ed25519.Ed25519PrivateKey.from_private_bytes(sk_bytes)
         return sk.sign(canonical_payload)
-
-    def get_public_key(self, key_id: str) -> bytes | None:
-        key = self._keys.get(key_id)
-        return key.public_key if key else None
-
-    def list_keys(self) -> list[HsmKey]:
-        return list(self._keys.values())
 
     def delete_key(self, key_id: str) -> bool:
         if key_id in self._keys:
