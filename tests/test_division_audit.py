@@ -9,7 +9,7 @@ import time
 import pytest
 
 from seal.audit import AuditLog
-from seal.vpe import generate_keypair, vpe_sign, vpe_verify
+from seal.vpe import VPEResult, generate_keypair, vpe_sign, vpe_verify
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -281,6 +281,64 @@ def test_record_from_result_invalid(sealer_audit, keypair, mock_remember):
     assert aid is not None
     cap = mock_remember.captured[-1]
     assert cap["value"]["result"] == "invalid"
+
+
+def test_record_from_result_degraded_hash(sealer_audit, mock_remember):
+    """record_from_result falls back to a degraded hash on canonicalization failure.
+
+    Covers the ``except (TypeError, ValueError, KeyError)`` branch at
+    division_vpe_audit.py:237-252: an envelope whose ``scope`` carries an
+    unserializable value defeats canonical JSON, so the audit record must use a
+    ``degraded:`` hash derived from the nonce and flag
+    reason="hash_computation_failed" (no reason supplied by the result object).
+    """
+    # scope containing a set is not JSON-serializable -> _canonical_json raises
+    bad_envelope = {
+        "issuer": "user:rez",
+        "nonce": "nonce-1234567890abcdef",
+        "scope": {"allowed_tools": {"set", "of", "strings"}},
+    }
+    result = VPEResult(valid=False)  # carries no reason
+
+    aid = sealer_audit.record_from_result(
+        envelope=bad_envelope,
+        result_obj=result,
+        tool_name="web_search",
+    )
+
+    assert aid is not None
+    assert len(mock_remember.captured) >= 1
+    cap = mock_remember.captured[-1]
+    assert cap["value"]["envelope_hash"].startswith("degraded:")
+    assert cap["value"]["envelope_hash"] == "degraded:nonce-1234567890"
+    assert cap["value"]["result"] == "invalid"
+    assert cap["value"]["reason"] == "hash_computation_failed"
+    assert cap["value"]["tool_name"] == "web_search"
+
+    # record() was still called — the degraded entry landed in the local log too
+    entries = sealer_audit.query_local()
+    assert any(e["envelope_hash"] == "degraded:nonce-1234567890" for e in entries)
+
+
+def test_record_from_result_degraded_hash_keeps_reason(sealer_audit, mock_remember):
+    """A degraded hash preserves an explicit reason supplied by the result object."""
+    bad_envelope = {
+        "issuer": "user:rez",
+        "nonce": "nonce-abcdef0123456789",
+        "scope": {"allowed_tools": {"set", "of", "strings"}},
+    }
+    result = VPEResult(valid=False, reason="signature mismatch")
+
+    aid = sealer_audit.record_from_result(
+        envelope=bad_envelope,
+        result_obj=result,
+    )
+
+    assert aid is not None
+    cap = mock_remember.captured[-1]
+    assert cap["value"]["envelope_hash"].startswith("degraded:")
+    assert cap["value"]["envelope_hash"] == "degraded:nonce-abcdef0123"
+    assert cap["value"]["reason"] == "signature mismatch"
 
 
 # ---------------------------------------------------------------------------
