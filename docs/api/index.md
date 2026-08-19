@@ -13,7 +13,6 @@ Seal exposes a clean public API through the `seal` package. The reference implem
 | `seal.broker` | `{SECRET:label}` placeholder resolver |
 | `seal.credential_store` | Fernet-encrypted key-value store |
 | `seal.store` | Persistent NonceStore and CounterStore (SQLite) |
-| `seal.key_store` | Key lifecycle store with time-based metadata |
 | `seal.key_manager` | Key lifecycle management registry |
 | `seal.rollback` | VPE/Hermes integration rollback procedures |
 | `seal.epd` | Embedded Prompt Detection scanner |

@@ -198,7 +198,7 @@ A verified prompt is a JSON wrapper with Ed25519 signature:
 | Module | LOC | Provides | Tests |
 |--------|-----|----------|-------|
 | `seal/store.py` | 247 | SQLite (WAL) `NonceStore` + `CounterStore`, expiry cleanup (P5.2) | `test_store.py` (32) |
-| `seal/key_manager.py` / `seal/key_store.py` | 920 | SQLite key registry: generated→active→expiring→retired→revoked, auto-rotation guard (P5.5). **L-004 (t_7d597f41):** all three `chmod` `OSError` sites now `log.warning` instead of silent `pass` (`:116–118`, `:139–141`, `:294–296`). | `test_key_manager.py` (37), `test_key_lifecycle.py` (27) |
+| `seal/key_manager.py` | 767 | SQLite key registry: generated→active→expiring→retired→revoked, auto-rotation guard (P5.5), Fernet-encrypted private keys at rest. **KeyStore (`seal/key_store.py`) deleted (B-020, `t_ae0a9778`)** — it was a parallel store writing raw-BLOB private keys to the same `~/.seal/keys.db`; KeyManager is the single surviving store. **L-004 (t_7d597f41):** all three `chmod` `OSError` sites now `log.warning` instead of silent `pass` (`:116–118`, `:139–141`, `:294–296`). | `test_key_manager.py` (37), `test_key_lifecycle.py` (27) |
 | `seal/rotator.py` | 43 | Rotation daemon — one-shot (cron) or persistent (`seal key daemon`) | `test_rotator.py` (t_ff898242, 7 tests) |
 | `benchmark_vpe_verify.py`, `benchmark_envelope_size.py` | — | P5.1 / P5.3 perf + size benchmarks | — |
 
@@ -263,7 +263,7 @@ A verified prompt is a JSON wrapper with Ed25519 signature:
 
 ## Phase 5 — Performance & Production Hardening ✅ Implemented
 
-> Persistent SQLite stores (`store.py`), key lifecycle + rotation (`key_manager.py`/`key_store.py`/`rotator.py`), HMAC path (`core.vpe_*_hmac`), and benchmarks all landed and tested.
+> Persistent SQLite stores (`store.py`), key lifecycle + rotation (`key_manager.py`/`rotator.py`), HMAC path (`core.vpe_*_hmac`), and benchmarks all landed and tested.
 
 **Goal:** Make VPE fast enough for real-time use and robust enough for production deployment.
 

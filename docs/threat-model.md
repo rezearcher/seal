@@ -57,7 +57,7 @@ This document describes the threat model for the Verified Prompt Envelope (VPE) 
 
 **Mitigation:**
 - Private keys stored with `0600` permissions
-- Key rotation support: compromised keys can be revoked via `KeyStore.revoke_key()`
+- Key rotation support: compromised keys can be revoked via `KeyManager.revoke_key()`
 - Expiring keys: `not_after` limits the window of validity
 
 **Residual risk:** A compromised key allows the attacker to sign arbitrary prompts until the key is revoked or expired. Detect via audit log anomalies.

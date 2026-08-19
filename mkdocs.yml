@@ -85,7 +85,6 @@ nav:
       - seal.broker: api/broker.md
       - seal.credential_store: api/credential_store.md
       - seal.store: api/store.md
-      - seal.key_store: api/key_store.md
       - seal.key_manager: api/key_manager.md
       - seal.rollback: api/rollback.md
       - seal.epd: api/epd.md

@@ -179,7 +179,7 @@ replace_guard_chain(vpe_enabled=True)
 
 ## Production Checklist
 
-- [ ] **Key rotation** — Set up periodic rotation with `seal.key_manager.KeyStore.rotate_key()`
+- [ ] **Key rotation** — Set up periodic rotation with `seal.key_manager.KeyManager.rotate_key()`
 - [ ] **Nonce store cleanup** — Verify cleanup TTL is configured correctly
 - [ ] **Audit monitoring** — Set up log aggregation for audit.jsonl
 - [ ] **Fallback mode** — Test behavior with unsigned prompts (should log as "unverified")

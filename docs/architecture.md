@@ -73,7 +73,7 @@ lifecycle, deployment, and advanced trust models layered on top:
 | Subsystem | Modules | Purpose |
 |-----------|---------|---------|
 | **Persistent stores** | `seal/store.py` | SQLite (WAL) `NonceStore` + `CounterStore` survive restarts; expired-nonce cleanup |
-| **Key lifecycle** | `seal/key_manager.py`, `seal/key_store.py`, `seal/rotator.py` | SQLite key registry (generated→active→expiring→retired→revoked), auto-rotation guard, rotation daemon (`seal key daemon`) |
+| **Key lifecycle** | `seal/key_manager.py`, `seal/rotator.py` | SQLite key registry (generated→active→expiring→retired→revoked), auto-rotation guard, rotation daemon (`seal key daemon`) |
 | **Hardware** | `seal/hardware.py` | HSM abstraction — YubiKey/TPM/Secure Enclave; private key never leaves the device |
 | **Federation** | `seal/federation.py` | Cross-agent trust anchors and federated audit trail. `resolve_trust_anchor()` resolves in order: registry → DNS TXT (`resolve_via_dns`) → `did:key` (`resolve_via_did`) → `did:web`/`did:ion` (`resolve_via_did_document`, HTTPS). `vpe_federated_verify()` accepts `did_web` (`federation.py:1365`) and forwards it to `resolve_trust_anchor()` (`federation.py:1431`), and `seal federation verify --did-web` exposes it on the CLI (`cli.py:964`) — the previously-documented did:web gap is closed (`t_fd51e037`) |
 | **Rollback** | `seal/rollback.py` | One-toggle disable + full config rollback; audit data preserved |
@@ -118,7 +118,7 @@ generated → active → expiring → retired
 |-------|---------|----------|---------|
 | NonceStore | SQLite (WAL) | `~/.seal/store.db` | Replay prevention |
 | CounterStore | SQLite (WAL) | `~/.seal/store.db` | Counter monotonicity |
-| KeyStore | SQLite (WAL) | `~/.seal/keys.db` | Key lifecycle & rotation |
+| KeyManager | SQLite (WAL) | `~/.seal/keys.db` | Key lifecycle & rotation (Fernet-encrypted at rest) |
 | CredentialStore | Fernet-encrypted file | `~/.seal/credentials.yaml.enc` | Secret storage |
 | AuditLog | JSONL file | `~/.seal/audit.jsonl` | Access audit trail |
 
