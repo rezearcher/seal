@@ -130,11 +130,26 @@ class HsmProvider(abc.ABC):
 
         Returns raw signature bytes (DER-encoded for ECDSA, fixed 64-byte
         for Ed25519).
+
+        Args:
+            canonical_payload: Bytes to sign.
+            key_id: Key identifier that must exist in this provider's key registry.
+
+        Raises:
+            KeyError: If key_id is not found in the provider's registry.
+            HsmError: If the hardware operation fails.
         """
         ...
 
     def get_public_key(self, key_id: str) -> bytes | None:
-        """Return public key bytes for a tracked key, or None if not found."""
+        """Return public key bytes for a tracked key, or None if not found.
+
+        Args:
+            key_id: Key identifier to look up.
+
+        Returns:
+            The SPKI/DER-encoded public key bytes, or None if not found.
+        """
         key = self._keys.get(key_id)
         return key.public_key if key else None
 
@@ -143,7 +158,18 @@ class HsmProvider(abc.ABC):
         return list(self._keys.values())
 
     def delete_key(self, key_id: str) -> bool:
-        """Remove a key record.  Returns True if removed."""
+        """Remove a key record.  Returns True if removed, False if key not found.
+
+        Args:
+            key_id: Key identifier to remove.
+
+        Returns:
+            True if the key was found and removed; False otherwise.
+
+        Note:
+            Base implementation always returns False. Subclasses should override
+            to implement actual deletion logic if supported by the hardware.
+        """
         return False
 
 
@@ -241,7 +267,17 @@ class YubiKeyPIVProvider(HsmProvider):
 
         The YubiKey PIV applet signs a hash, not raw data.  We hash
         the canonical payload with SHA-256 first, then sign the hash.
+
+        Args:
+            canonical_payload: Bytes to sign.
+            key_id: Key identifier that must exist in self._keys.
+
+        Raises:
+            KeyError: If key_id is not found in the key registry.
         """
+        if key_id not in self._keys:
+            raise KeyError(f"YubiKey PIV key not found: {key_id}")
+
         payload_hash = hashlib.sha256(canonical_payload).digest()
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -439,7 +475,18 @@ class TPMProvider(HsmProvider):
 
         The TPM signs the raw data digest (tpm2_sign handles hashing
         internally when -g sha256 is given).
+
+        Args:
+            canonical_payload: Bytes to sign.
+            key_id: Key identifier that must exist in self._keys and have a persisted context.
+
+        Raises:
+            KeyError: If key_id is not found in the key registry.
+            FileNotFoundError: If the TPM key context file does not exist.
         """
+        if key_id not in self._keys:
+            raise KeyError(f"TPM key not found in registry: {key_id}")
+
         persist_dir = _tpm_persist_dir()
         key_ctx = persist_dir / f"{key_id}.ctx"
         if not key_ctx.exists():

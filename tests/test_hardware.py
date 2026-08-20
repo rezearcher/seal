@@ -460,20 +460,34 @@ class TestYubiKeyPIV:
         with pytest.raises(HsmError, match="timed out"):
             self.provider.generate("slow")
 
+    def test_sign_missing_key(self):
+        """Test that signing with a nonexistent key_id raises KeyError."""
+        with pytest.raises(KeyError, match="YubiKey PIV key not found"):
+            self.provider.sign(b"payload", "nonexistent-key-id")
+
     def test_sign_success(self, monkeypatch):
         monkeypatch.setattr(hardware.subprocess, "run", _fake_run_success)
-        sig = self.provider.sign(b"payload-bytes", "any-id")
+        # Register a key first
+        key = _make_key(key_id="yk1", provider="yubikey")
+        YubiKeyPIVProvider._keys["yk1"] = key
+        sig = self.provider.sign(b"payload-bytes", "yk1")
         assert sig == b"fake-output"
 
     def test_sign_called_process_error(self, monkeypatch):
         monkeypatch.setattr(hardware.subprocess, "run", _fake_run_fail)
+        # Register a key first
+        key = _make_key(key_id="yk2", provider="yubikey")
+        YubiKeyPIVProvider._keys["yk2"] = key
         with pytest.raises(HsmError, match="YubiKey PIV signing failed"):
-            self.provider.sign(b"payload", "any-id")
+            self.provider.sign(b"payload", "yk2")
 
     def test_sign_timeout(self, monkeypatch):
         monkeypatch.setattr(hardware.subprocess, "run", _fake_run_timeout)
+        # Register a key first
+        key = _make_key(key_id="yk3", provider="yubikey")
+        YubiKeyPIVProvider._keys["yk3"] = key
         with pytest.raises(HsmError, match="timed out"):
-            self.provider.sign(b"payload", "any-id")
+            self.provider.sign(b"payload", "yk3")
 
     def test_get_public_key(self):
         key = _make_key(key_id="yk1", provider="yubikey")
@@ -594,15 +608,26 @@ class TestTPMProvider:
         with pytest.raises(HsmError, match="timed out"):
             self.provider.generate("slow")
 
-    def test_sign_missing_context(self, monkeypatch, tmp_path):
+    def test_sign_missing_key_in_registry(self, monkeypatch, tmp_path):
+        """Test that signing with a key not in the registry raises KeyError."""
         monkeypatch.setattr(hardware, "_tpm_persist_dir", lambda: tmp_path)
-        with pytest.raises(FileNotFoundError, match="TPM key context not found"):
+        with pytest.raises(KeyError, match="TPM key not found in registry"):
             self.provider.sign(b"data", "no-such-key")
+
+    def test_sign_missing_context(self, monkeypatch, tmp_path):
+        """Test that signing fails when key context file is missing."""
+        monkeypatch.setattr(hardware, "_tpm_persist_dir", lambda: tmp_path)
+        # Register the key but don't create the context file
+        TPMProvider._keys["tpm-missing-ctx"] = _make_key(key_id="tpm-missing-ctx", provider="tpm")
+        with pytest.raises(FileNotFoundError, match="TPM key context not found"):
+            self.provider.sign(b"data", "tpm-missing-ctx")
 
     def test_sign_success(self, monkeypatch, tmp_path):
         (tmp_path / "tpm1.ctx").write_bytes(b"ctx")
         monkeypatch.setattr(hardware, "_tpm_persist_dir", lambda: tmp_path)
         monkeypatch.setattr(hardware.subprocess, "run", _fake_run_success)
+        # Register the key
+        TPMProvider._keys["tpm1"] = _make_key(key_id="tpm1", provider="tpm")
         sig = self.provider.sign(b"data", "tpm1")
         assert sig == b"fake-output"
 
@@ -610,6 +635,8 @@ class TestTPMProvider:
         (tmp_path / "tpm1.ctx").write_bytes(b"ctx")
         monkeypatch.setattr(hardware, "_tpm_persist_dir", lambda: tmp_path)
         monkeypatch.setattr(hardware.subprocess, "run", _fake_run_fail)
+        # Register the key
+        TPMProvider._keys["tpm1"] = _make_key(key_id="tpm1", provider="tpm")
         with pytest.raises(HsmError, match="TPM sign failed"):
             self.provider.sign(b"data", "tpm1")
 
@@ -617,6 +644,8 @@ class TestTPMProvider:
         (tmp_path / "tpm1.ctx").write_bytes(b"ctx")
         monkeypatch.setattr(hardware, "_tpm_persist_dir", lambda: tmp_path)
         monkeypatch.setattr(hardware.subprocess, "run", _fake_run_timeout)
+        # Register the key
+        TPMProvider._keys["tpm1"] = _make_key(key_id="tpm1", provider="tpm")
         with pytest.raises(HsmError, match="timed out"):
             self.provider.sign(b"data", "tpm1")
 
