@@ -7,3 +7,16 @@
 Checked the seal project architecture and recent progress; core capabilities implemented, external adoption pending, testing coverage at 81.20% as of 2026-08-14. This includes VPE Core and EPD Scanner, enhancing interoperability across cross-language ports.
 
 **Additional Notes**: No blockers were noted for the project.
+
+## Sync 2026-08-22 — Review-persona cycle (t_8fa7c95b, t_a1f0de05, t_ddde11df)
+
+Three "Review Beautifier findings" tasks closed in the prior 24h. **Verified against git: they produced no product-code changes.** Their only material output is `kanban_tasks.md` (commit `193551d`, +53/-10), which now holds a review-persona findings backlog. The remaining 24h commits are non-functional: a 1-char whitespace fix in `vpe-ts/tests/core.test.ts` (`cc78d2a`) and an empty `.gitkeep` (`b4df749`). No commit references any of the three task IDs.
+
+These are **triage passes, not implementations** — the findings they surfaced are candidate work, not shipped. Status verified in code:
+
+- **Beautifier / Task 1 — refactor duplicate function in `vpe.py`:** No duplicate top-level function exists (`grep def … | uniq -d` is empty; every def occurs once). Finding is moot or already covered by the earlier `_canonical_json_multi → _canonical_json` consolidation (`4ad7a63`, t_c010d85c). **No change shipped; nothing left to do here.**
+- **Beautifier / Task 2 — enhance error handling in `seal/hardware.py`:** **GAP — not separately implemented.** `hardware.py` is now 899 LOC / 20 `HsmError` raises. The growth from the last-synced 884 LOC traces to `b3800d0` (the Lie-Detector missing-keys task, already documented in the 2026-07-18 sync), not to a distinct Task-2 commit.
+- **Lie Detector / Task 3 — missing-key error handling in `hardware.py`:** Shipped in `b3800d0` (+51 in `hardware.py`, +37 in `tests/test_hardware.py`); previously documented. No new work this cycle.
+- **Gap Analyzer / Task 4 — address ARCHITECTURE.md coverage gaps (research):** This doc-sync is that pass. No new coverage gaps closed by the review cycle itself.
+
+Core-capability and test-suite claims above are unchanged and unaffected by this cycle. Per standing seal doc-sync policy, the 1141-pass / 81.20%-coverage figure still rests on the 2026-08-14 commit history (the sandbox cannot run pytest), and no fresh pass status is asserted here.
