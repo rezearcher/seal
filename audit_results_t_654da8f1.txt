@@ -1,0 +1,8 @@
+VERDICT: UNRESOLVED
+
+EVIDENCE:
+- The `t_654da8f1` card claims to add a scope gate to the fusion pipeline, but no relevant files were found nor could any functioning implementation be verified based on existing git history or file output. The expected artifact does not exist.
+- The card body asked for an implementation to prevent out-of-scope domains, yet no such scope gate implementation exists in the current project state.
+- Absence of evidence indicates a non-existent result against the card's ask.
+- Acceptance predicate should have been defined.
+  CHECK: `git log` should confirm commits related to scope gates in fusion pipeline. Current HEAD shows only commit related to architecture.
