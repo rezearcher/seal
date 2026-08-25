@@ -18,7 +18,7 @@ vectors:
 
 .PHONY: test-python
 test-python:
-	python3 -m pytest tests/ -x -q
+	bash scripts/test.sh tests/ -x -q
 
 # ---------------------------------------------------------------------------
 # TypeScript tests

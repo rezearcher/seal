@@ -222,7 +222,7 @@ cd seal
 uv venv
 uv pip install -e ".[dev]"
 
-# Run tests
+# Run tests (must be run from the repo root; scripts/test.sh refuses otherwise)
 uv run pytest
 
 # Lint
