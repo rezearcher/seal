@@ -46,3 +46,61 @@ jobs:
           file: ./coverage.xml
           flags: unittests
           fail_ci_if_error: false
+
+  # --------------------------------------------------------------------------
+  # Cross-language port suites (vpe-ts / vpe-rust / vpe-go)
+  # Each port runs its core suite PLUS its interop-vector test against the
+  # shared fixture tests/vectors/vpe_vectors.json — the ARCHITECTURE.md:5
+  # "consumed by an automated interop test in all four languages" claim.
+  # Kept as separate top-level jobs so all four suites run in parallel.
+  # --------------------------------------------------------------------------
+  vpe-ts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vpe-ts/package-lock.json
+
+      - name: Install dependencies
+        working-directory: vpe-ts
+        run: npm ci --silent
+
+      - name: Run TypeScript port tests (jest, incl. interop vectors)
+        working-directory: vpe-ts
+        run: npm test --silent
+
+  vpe-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: vpe-rust
+
+      - name: Run Rust port tests (cargo, incl. interop vectors)
+        working-directory: vpe-rust
+        run: cargo test --quiet
+
+  vpe-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Run Go port tests (go test, incl. interop vectors)
+        working-directory: vpe-go
+        run: go test ./...

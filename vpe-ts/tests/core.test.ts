@@ -795,7 +795,7 @@ describe('HMACVerification', () => {
 
   test('verify with different secret rejects', () => {
     const env = vpeSignHmac('hello', { sharedSecret: HMAC_SECRET });
-    const result = vpeVerifyHmac(env, { sharedSecret: Buffer.from('wrong'.repeat(8)') });
+    const result = vpeVerifyHmac(env, { sharedSecret: Buffer.from('wrong'.repeat(8)) });
     expect(result.valid).toBe(false);
   });
 
