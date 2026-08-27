@@ -165,9 +165,7 @@ class TestCrypto:
         with fake_nacl.context() as m:
             _install_fake_nacl(m)
             sk, pk = vpe.generate_keypair()
-            env = vpe.vpe_sign(
-                "interop", "issuer:test", "audience:test", private_key=sk, public_key=pk
-            )
+            env = vpe.vpe_sign("interop", "issuer:test", "audience:test", private_key=sk, public_key=pk)
         # fake nacl is gone now; vpe_verify must fall back to cryptography
         assert vpe.vpe_verify(env).valid
 
@@ -175,7 +173,9 @@ class TestCrypto:
         monkeypatch.setattr(vpe, "_nacl_sign_available", lambda: False)
         with pytest.raises(RuntimeError, match="nacl.*cryptography"):
             vpe.vpe_sign(
-                "p", "issuer:test", "audience:test",
+                "p",
+                "issuer:test",
+                "audience:test",
                 private_key=b"\x01" * 32,
             )
 
@@ -288,23 +288,28 @@ class TestSign:
     def test_sign_respects_explicit_doc_sha256(self, keypair):
         sk, _ = keypair
         env = vpe.vpe_sign(
-            "hello", "issuer:test", "audience:test",
-            private_key=sk, doc_sha256="deadbeef",
+            "hello",
+            "issuer:test",
+            "audience:test",
+            private_key=sk,
+            doc_sha256="deadbeef",
         )
         assert env["doc_sha256"] == "deadbeef"
 
     def test_sign_embeds_public_key_when_given(self, keypair):
         sk, pk = keypair
-        env = vpe.vpe_sign(
-            "hello", "issuer:test", "audience:test", private_key=sk, public_key=pk
-        )
+        env = vpe.vpe_sign("hello", "issuer:test", "audience:test", private_key=sk, public_key=pk)
         assert env["public_key"] == pk.hex()
 
     def test_sign_respects_explicit_nonce_and_counter(self, keypair):
         sk, _ = keypair
         env = vpe.vpe_sign(
-            "hello", "issuer:test", "audience:test",
-            private_key=sk, nonce="fixed-nonce", counter=7,
+            "hello",
+            "issuer:test",
+            "audience:test",
+            private_key=sk,
+            nonce="fixed-nonce",
+            counter=7,
         )
         assert env["nonce"] == "fixed-nonce"
         assert env["counter"] == 7
@@ -312,9 +317,7 @@ class TestSign:
     def test_sign_scope_passthrough(self, keypair):
         sk, _ = keypair
         scope = {"allowed_tools": ["read"], "max_cost": 5}
-        env = vpe.vpe_sign(
-            "hello", "issuer:test", "audience:test", private_key=sk, scope=scope
-        )
+        env = vpe.vpe_sign("hello", "issuer:test", "audience:test", private_key=sk, scope=scope)
         assert env["scope"] == scope
 
     @pytest.mark.parametrize(
@@ -343,8 +346,12 @@ class TestVerify:
     def envelope(self):
         sk, pk = vpe.generate_keypair()
         env = vpe.vpe_sign(
-            "hello", "issuer:test", "audience:test",
-            private_key=sk, public_key=pk, counter=1,
+            "hello",
+            "issuer:test",
+            "audience:test",
+            private_key=sk,
+            public_key=pk,
+            counter=1,
         )
         return env
 
@@ -378,8 +385,12 @@ class TestVerify:
         # Re-sign so iat is anchored at the frozen time.
         sk, pk = vpe.generate_keypair()
         env = vpe.vpe_sign(
-            "hello", "issuer:test", "audience:test",
-            private_key=sk, public_key=pk, ttl_seconds=300,
+            "hello",
+            "issuer:test",
+            "audience:test",
+            private_key=sk,
+            public_key=pk,
+            ttl_seconds=300,
         )
         monkeypatch.setattr(vpe.time, "time", lambda: 1_000_000 + 301)
         result = vpe.vpe_verify(env)
@@ -390,8 +401,12 @@ class TestVerify:
         sk, pk = vpe.generate_keypair()
         monkeypatch.setattr(vpe.time, "time", lambda: 1_000_000)
         env = vpe.vpe_sign(
-            "hello", "issuer:test", "audience:test",
-            private_key=sk, public_key=pk, ttl_seconds=1,
+            "hello",
+            "issuer:test",
+            "audience:test",
+            private_key=sk,
+            public_key=pk,
+            ttl_seconds=1,
         )
         monkeypatch.setattr(vpe.time, "time", lambda: 1_000_000 + 999)
         result = vpe.vpe_verify(env, skip_checks=["expiry"])
@@ -473,8 +488,12 @@ class TestVerify:
     def test_scope_tool_allowed(self, envelope):
         sk, pk = vpe.generate_keypair()
         env = vpe.vpe_sign(
-            "hello", "issuer:test", "audience:test",
-            private_key=sk, public_key=pk, scope={"allowed_tools": ["read", "write"]},
+            "hello",
+            "issuer:test",
+            "audience:test",
+            private_key=sk,
+            public_key=pk,
+            scope={"allowed_tools": ["read", "write"]},
         )
         result = vpe.vpe_verify(env, actual_args={"_tool_name": "read"})
         assert result.valid is True
@@ -482,8 +501,12 @@ class TestVerify:
     def test_scope_tool_denied(self, envelope):
         sk, pk = vpe.generate_keypair()
         env = vpe.vpe_sign(
-            "hello", "issuer:test", "audience:test",
-            private_key=sk, public_key=pk, scope={"allowed_tools": ["read"]},
+            "hello",
+            "issuer:test",
+            "audience:test",
+            private_key=sk,
+            public_key=pk,
+            scope={"allowed_tools": ["read"]},
         )
         result = vpe.vpe_verify(env, actual_args={"_tool_name": "exec"})
         assert result.valid is False
@@ -492,8 +515,12 @@ class TestVerify:
     def test_scope_max_cost(self, envelope):
         sk, pk = vpe.generate_keypair()
         env = vpe.vpe_sign(
-            "hello", "issuer:test", "audience:test",
-            private_key=sk, public_key=pk, scope={"max_cost": 5},
+            "hello",
+            "issuer:test",
+            "audience:test",
+            private_key=sk,
+            public_key=pk,
+            scope={"max_cost": 5},
         )
         assert vpe.vpe_verify(env, actual_args={"_estimated_cost": 5}).valid is True
         result = vpe.vpe_verify(env, actual_args={"_estimated_cost": 6})
@@ -503,12 +530,14 @@ class TestVerify:
     def test_scope_skipped(self, envelope):
         sk, pk = vpe.generate_keypair()
         env = vpe.vpe_sign(
-            "hello", "issuer:test", "audience:test",
-            private_key=sk, public_key=pk, scope={"allowed_tools": ["read"]},
+            "hello",
+            "issuer:test",
+            "audience:test",
+            private_key=sk,
+            public_key=pk,
+            scope={"allowed_tools": ["read"]},
         )
-        result = vpe.vpe_verify(
-            env, actual_args={"_tool_name": "exec"}, skip_checks=["scope"]
-        )
+        result = vpe.vpe_verify(env, actual_args={"_tool_name": "exec"}, skip_checks=["scope"])
         assert result.valid is True
 
 
@@ -551,17 +580,13 @@ class TestKeyFiles:
         assert (loaded_sk, loaded_pk) == (sk, pk)
 
     def test_save_expands_tilde(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            os.path, "expanduser", lambda p: str(tmp_path / "keys") if p == "~/keys" else p
-        )
+        monkeypatch.setattr(os.path, "expanduser", lambda p: str(tmp_path / "keys") if p == "~/keys" else p)
         sk, pk = vpe.generate_keypair()
         vpe.save_keypair(sk, pk, "~/keys")
         assert (tmp_path / "keys" / "vpe_private.key").exists()
 
     def test_load_or_generate_expands_tilde(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            os.path, "expanduser", lambda p: str(tmp_path / "keys") if p == "~/keys" else p
-        )
+        monkeypatch.setattr(os.path, "expanduser", lambda p: str(tmp_path / "keys") if p == "~/keys" else p)
         sk, pk = vpe.load_or_generate_keypair("~/keys")
         assert len(sk) == 32 and len(pk) == 32
         assert (tmp_path / "keys" / "vpe_private.key").exists()

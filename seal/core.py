@@ -483,6 +483,7 @@ def verify_cert_chain(chain: list, *, trust_anchor: bytes) -> dict:
 # Multi-signature (N-of-M) support
 # ---------------------------------------------------------------------------
 
+
 def _canonical_json_multi(envelope: dict) -> bytes:
     """Deterministic canonical JSON for multi-sig envelopes.
 
