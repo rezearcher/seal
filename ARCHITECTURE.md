@@ -47,7 +47,7 @@ One task closed in the prior 24h, verified against code (commit `fac86fd`; guard
 
 ## Sync 2026-08-27 — Cross-language port suites wired into CI (t_032c2fb1)
 
-One task closed in the prior 24h, verified against source (`.github/workflows/test.yml`, commit `4761ec2`). **CI wiring is confirmed in the workflow file; a live GitHub Actions run could not be triggered from this sandbox, so the jobs are proven *defined and self-consistent*, not observed green.**
+One task closed in the prior 24h, verified against source (`.github/workflows/test.yml`, commit `4761ec2`). **CI wiring is confirmed in the workflow file; a live GitHub Actions run could not be triggered from this sandbox, so the jobs were at the time proven *defined and self-consistent* — unverified by a live run. That caveat is superseded: the follow-up sync entry below (t_3cb799e6) records the first observed-green run (push `33071796355`, commit `98da04e`).**
 
 - **t_032c2fb1 — Wire vpe-ts/vpe-rust/vpe-go port suites into GitHub Actions CI: SHIPPED (wiring verified).** `test.yml` gained three parallel top-level jobs alongside the existing `test` (Python) job:
   - `vpe-ts` — Node 22, `npm ci` + `npm test` in `vpe-ts/` (jest, incl. interop vectors). Depends on `vpe-ts/package-lock.json` for `npm ci` and the `cache-dependency-path` — **present** (verified).
@@ -56,3 +56,10 @@ One task closed in the prior 24h, verified against source (`.github/workflows/te
 - **Interop coverage now enforced by CI in all four languages.** Each port's interop-vector test (`vpe-ts/tests/interop_vectors.test.ts`, `vpe-rust/tests/interop_vectors_test.rs`, `vpe-go/vpe/interop_vectors_test.go`) runs inside its port job; the Python side (`tests/test_interop_vectors.py`) runs in the `test` job via pytest. All four validate against the shared fixture `tests/vectors/vpe_vectors.json` (present, verified). This closes the drift-never-fails hole the task title names: before this commit the ports were tested only locally, so a cross-language divergence (or a fixture regenerated on one side) could land on master without failing a build.
 - **Trigger paths:** the port jobs share the workflow's `push`/`pull_request` triggers on `main`/`master` with `paths-ignore` for `*.md`/`docs/**`/`proposals/**`. **Note this means a change confined to `.md` files does not run any suite, including the port jobs — expected for a docs-only push, but a port change accompanied only by a doc edit would still trigger via the code path.**
 - **Scope:** CI/build tooling only — no product-code (`seal/`) and no test-logic changes; the ports and their tests already existed (P8.5a). This task only added the CI jobs that execute them. Prior green-suite and coverage figures are unaffected.
+
+## Sync 2026-08-27 — Cross-language port CI jobs observed green (t_3cb799e6)
+
+Follow-up to the t_032c2fb1 entry above. On push `33071796355` (commit `98da04e`, 2026-08-27T12:25Z) the Tests workflow ran **all five jobs green**: `test` (3.11), `test` (3.12), `vpe-ts`, `vpe-rust`, `vpe-go`. This is the first observed-green run of the cross-language drift protection t_032c2fb1 added — the jobs are no longer merely wired, they are proven green in a live GitHub Actions run. The caveat in the t_032c2fb1 entry above (jobs "proven *defined and self-consistent*" absent a live run) is hereby superseded, so future foreman cycles stop re-verifying a proven claim.
+
+- **t_3cb799e6 — Re-sync ARCHITECTURE.md: SHIPPED (doc-only).** Added this dated sync entry recording the observed-green run (push `33071796355`, five green jobs) and corrected the stale unverified-run caveat in the t_032c2fb1 entry. Verified against the live GitHub Actions run via `gh run view 33071796355`: conclusion `success`, all five jobs completed successfully.
+- **Scope:** documentation only — no product-code (`seal/`), no test-logic, and no workflow-file changes. `uv run ruff check .` passes (no Python touched). Prior green-suite and coverage figures are unaffected.
