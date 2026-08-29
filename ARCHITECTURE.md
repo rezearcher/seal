@@ -78,4 +78,13 @@ Resolves the open caveat in the t_e8e5ccc3 entry above ("Lint-green NOT independ
 - `uv run ruff format --check .` → `67 files already formatted`, exit 0 — format-clean confirmed locally (the exact gate lint.yml:39 runs).
 - `gh run list --workflow=lint.yml` → latest Lint run `33071796403` (push `style(format): ruff format drift…`, 2026-08-27T12:25:35Z) = **success**. The prior Lint failures (`33058087074`, `32848308658`) predate the fix commit `98da04e`.
 
+## Sync 2026-08-29 — Backlog adjudication + thesis-ledger Lamarck entry (t_da70723c, t_ccb218fc)
+
+Two tasks closed in the prior 24h, both documentation/adjudication (no product-code touched this cycle).
+
+- **t_da70723c — Adjudicate stale `new_tasks.md`/`kanban_tasks.md` findings: SHIPPED (doc-only).** The recurring "enhance error handling in `seal/hardware.py`" finding is **DEAD** — the error-handling pass is already shipped, so the re-proposal is a stale premise, not open work. **Verified in code this session:** `grep -n "raise HsmError" seal/hardware.py` = **20 raise sites** in structured `except → raise HsmError(...) from exc` chains, **0 bare excepts** (`grep -E 'except:\s*$'` empty), file = 899 LOC. This matches the GAP resolution already recorded in the 2026-08-22 entry (Beautifier/Task 2) and the Lie-Detector `b3800d0` shipment.
+  - **Correction to propagate, do not copy the backlog figure:** `new_tasks.md:14` and the task title assert "**22 `HsmError` raise-sites**". That "22" is the `grep -c HsmError` *line* count (22 lines contain the token — including the class definition and a non-raise `HsmError(...)` construction), **not** the number of `raise` statements. The verified raise-site count is **20**. Downstream docs should say **20 `raise HsmError` sites / 899 LOC**, not 22 raises.
+- **t_ccb218fc — Record Lamarck memory-poison [PROVEN] in `docs/THESIS_AND_VALIDATION.md` ledger: SHIPPED (doc-only, commit `b628f6f`).** **Verified present** at `docs/THESIS_AND_VALIDATION.md:86–92` under the "[PROVEN] — reproduced with Assay this session" section: Lamarck live-system, always-on signed-provenance gate rejected **16087/16087** poison events; evidence at `~/projects/lamarck/experiments/m1_seal_collapse/` (`collapse_test.py`, `RESULTS.md`) + `proposals/lamarck-first-client.md`. This is the first live-system (not synthetic-benchmark) [PROVEN] datapoint in the ledger.
+- **Scope:** documentation only — no `seal/`, test-logic, or workflow changes. Prior green-suite (1112 passed / 84.67%, 2026-08-24) and CI figures are unaffected.
+
 Both Lint-workflow gates are now observed green, not merely claimed-by-commit. The t_e8e5ccc3 "claimed-by-commit, not observed" caveat is hereby superseded. No product-code or workflow-file changes — verification/doc-sync only.
