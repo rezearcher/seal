@@ -83,6 +83,13 @@ war — we must not *lose* it while we win the deterministic classes.**
 - **Seal core is real**: 643 tests; Ed25519 sign/verify, TTL, nonce-replay,
   multi-sig, cert chains all verified.
 - **Productized**: one-command install + `seal quickstart` / `epd` / `memory`.
+- **Lamarck live-system memory-poison defense** (first client, always-on
+  self-training workload — **live-system evidence, not synthetic**): Seal's
+  signed-provenance gate rejected **16087/16087** poison events; fresh-data
+  loss **5.29 nats** baseline → **5.84 nats** collapsed (unsigned store) →
+  **5.48 nats** seal-protected (≈ baseline). Repro:
+  `~/projects/lamarck/experiments/m1_seal_collapse/` (`collapse_test.py`,
+  `RESULTS.md`); proposal `proposals/lamarck-first-client.md`.
 
 > Caveat on all of the above: the discrimination batteries are **synthetic and
 > authored by us.** "Beats detection on our own test" ≠ "beats it in the wild."
