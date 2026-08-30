@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import sys
@@ -56,6 +57,8 @@ from seal.key_manager import (
 from seal.memory import sign_memory, verify_memory
 from seal.rollback import RollbackReport, cmd_disable, cmd_rollback, cmd_status  # noqa: F401
 
+log = logging.getLogger(__name__)
+
 SEAL_DIR = Path.home() / ".seal"
 DEFAULT_STORE_PATH = SEAL_DIR / "credentials.yaml.enc"
 DEFAULT_AUDIT_PATH = SEAL_DIR / "audit.jsonl"
@@ -68,8 +71,8 @@ def _ensure_seal_dir() -> None:
     SEAL_DIR.mkdir(parents=True, exist_ok=True)
     try:
         SEAL_DIR.chmod(0o700)
-    except OSError:
-        pass
+    except OSError as exc:
+        log.warning("cannot set 0700 perms on seal dir %s: %s", SEAL_DIR, exc)
 
 
 def _valid_label(label: str) -> bool:
