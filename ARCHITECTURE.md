@@ -88,3 +88,14 @@ Two tasks closed in the prior 24h, both documentation/adjudication (no product-c
 - **Scope:** documentation only — no `seal/`, test-logic, or workflow changes. Prior green-suite (1112 passed / 84.67%, 2026-08-24) and CI figures are unaffected.
 
 Both Lint-workflow gates are now observed green, not merely claimed-by-commit. The t_e8e5ccc3 "claimed-by-commit, not observed" caveat is hereby superseded. No product-code or workflow-file changes — verification/doc-sync only.
+## Sync 2026-08-30 — Five closures, zero code (t_f2a318ac, t_a4a902b9, t_ef4642cb, t_90d10fd4, t_aa6f0317)
+
+Five cards closed in the prior 24h. **Verified against git: no commit references any of the five task IDs, and no product-code changed.** They are adjudication/triage closures, not implementations — nothing to record as shipped:
+
+- **t_a4a902b9 — Refactor Duplicated Code: AUTO-CLOSED duplicate** of `seal/t_8c774745` ("Eliminate Duplicated Code"), which **remains OPEN**. The board comment cites prior external completion (commit `fc70e5b`); the real card is the open one.
+- **t_ef4642cb — Optimize Loops: AUTO-CLOSED duplicate** of `seal/t_14fd76dc` ("Optimize O(n²) Loops"), which **remains OPEN**; recreated as t_aa6f0317 for durable state.
+- **t_aa6f0317 — Optimize Loops: closed with CRITIC FAIL on its own acceptance predicate** (LLM-auditor card, no machine-checkable predicate). Worker examined the indexed files and found **no loop structures / no O(n²) instances** in the visible Python files (seal/epd/patterns.py is regex-only); no commit landed.
+- **t_90d10fd4 — Optimize Loops: closed done, empty result**; comment states recent repo commits already addressed the loop work. No commit references the task ID.
+- **t_f2a318ac — Handle Silent Exceptions: closed done, empty result**; no commit references the task ID.
+
+Per standing seal doc-sync policy (same as the 2026-08-22 review-persona cycle): these are **triage passes, not implementations** — the findings they surfaced are candidate work, not shipped. Core-capability and test-suite claims above are unchanged; prior green-suite figure (1112 passed / 84.67%, 2026-08-24) stands.
