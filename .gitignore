@@ -37,7 +37,6 @@ venv/
 Thumbs.db
 
 # Build / benchmarks
-benchmark_*.py
 profiling/
 
 # Scratch / temp artifacts (write-probes, debug dumps, editor backups)
