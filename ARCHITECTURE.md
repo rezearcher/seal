@@ -106,3 +106,13 @@ One task closed in the prior 24h — a real product-code change (unlike the prio
 
 - **t_66912521 — Fix silent chmod OSError swallow in `seal/cli.py::_ensure_seal_dir()` (L-001): SHIPPED (verified in code).** `_ensure_seal_dir()` no longer swallows `chmod` failures silently. The `SEAL_DIR.chmod(0o700)` call is now wrapped in `try/except OSError as exc` and logs `log.warning("cannot set 0700 perms on seal dir %s: %s", SEAL_DIR, exc)` on failure (module logger `log = logging.getLogger(__name__)` at `cli.py:60`). Prior behaviour was a bare `pass` that hid a failure to restrict the credential-directory permissions — a security-relevant silent failure (L-001). The `mkdir(parents=True, exist_ok=True)` on the line above is intentionally left to raise (directory creation failure should be fatal); only the best-effort permission hardening is now warned-and-continued rather than swallowed. Callers at `cli.py:139` and `cli.py:986` are unchanged.
 - **Scope:** single-function product-code change in `seal/cli.py` — no test-logic, workflow, or coverage change recorded for this task. Prior green-suite figure (1112 passed / 84.67%, 2026-08-24) is unaffected; the sandbox cannot re-run pytest, so no fresh pass status is asserted here.
+
+## Benchmark baseline (2026-08-31)
+
+Benchmark results are now durable: `.github/workflows/benchmark.yml` invokes the canonical benchmark scripts (`uv run python benchmark_vpe_verify.py`, `uv run python benchmark_envelope_size.py`) instead of the old inline ad-hoc script, tees each to `benchmark_*.log`, and the upload-artifact step picks those logs up (previously the step printed to stdout only, so the weekly Monday run shipped no artifact). This baseline supersedes the pre-wiring status-quo where ARCHITECTURE.md claimed benchmarks with targets but no recorded measurements existed.
+
+Baselines measured 2026-08-31, local x86_64, `uv run` from repo root (100 runs/size):
+
+- **VPE verify latency (avg):** 1KB (1,008 B envelope): **0.068 ms** — PASS (<5 ms target); 10KB (10,008 B): **0.090 ms** — PASS (<10 ms); 100KB (100,008 B): **0.239 ms** — PASS (<20 ms). Phase breakdown dominated by Ed25519 verify (~45–87%) + canonical JSON rebuild (~8–38%); envelope throughput ~15–418 MB/s by size.
+- **Compact-envelope overhead (deterministic, asserted in CI):** **216 B** for compact Ed25519 envelopes vs the <300 B target — PASS; 124 B saved vs standard (36% on a 1-B prompt). Compact parse is ~33% faster; compact verify ≈ standard verify (~0.054 ms both).
+- **CI assertion policy:** latency targets are reported (not gated — noisy on shared GitHub runners); the deterministic <300 B compact-overhead target is asserted by `benchmark_envelope_size.py` (printed as `pass_target`).

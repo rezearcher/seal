@@ -25,24 +25,11 @@ jobs:
 
       - name: Run VPE verify benchmark
         run: |
-          uv run python -c "
-          from seal import vpe_sign, vpe_verify, generate_key_pair
-          import time
+          uv run python benchmark_vpe_verify.py 2>&1 | tee benchmark_vpe_verify.log
 
-          keys = generate_key_pair()
-
-          for size, label in [(1000, '1KB'), (10000, '10KB'), (100000, '100KB')]:
-              prompt = 'x' * size
-              envelope = vpe_sign(prompt, scope={'test': True}, ttl_seconds=300, private_key=keys['private_key'])
-
-              samples = 100
-              start = time.perf_counter_ns()
-              for _ in range(samples):
-                  vpe_verify(envelope, public_key=keys['public_key'])
-              elapsed = (time.perf_counter_ns() - start) / 1e6
-
-              print(f'{label}: {elapsed / samples:.3f}ms avg ({samples} samples)')
-          "
+      - name: Run envelope size benchmark
+        run: |
+          uv run python benchmark_envelope_size.py 2>&1 | tee benchmark_envelope_size.log
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
