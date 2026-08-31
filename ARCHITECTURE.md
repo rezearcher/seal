@@ -99,3 +99,10 @@ Five cards closed in the prior 24h. **Verified against git: no commit references
 - **t_f2a318ac — Handle Silent Exceptions: closed done, empty result**; no commit references the task ID.
 
 Per standing seal doc-sync policy (same as the 2026-08-22 review-persona cycle): these are **triage passes, not implementations** — the findings they surfaced are candidate work, not shipped. Core-capability and test-suite claims above are unchanged; prior green-suite figure (1112 passed / 84.67%, 2026-08-24) stands.
+
+## Sync 2026-08-31 — Silent chmod OSError swallow fixed in `_ensure_seal_dir()` (t_66912521)
+
+One task closed in the prior 24h — a real product-code change (unlike the prior five triage-only closures). **Verified in code this session** (`seal/cli.py:70-75`), matching commit `2d76e2c` in the recent-commits list.
+
+- **t_66912521 — Fix silent chmod OSError swallow in `seal/cli.py::_ensure_seal_dir()` (L-001): SHIPPED (verified in code).** `_ensure_seal_dir()` no longer swallows `chmod` failures silently. The `SEAL_DIR.chmod(0o700)` call is now wrapped in `try/except OSError as exc` and logs `log.warning("cannot set 0700 perms on seal dir %s: %s", SEAL_DIR, exc)` on failure (module logger `log = logging.getLogger(__name__)` at `cli.py:60`). Prior behaviour was a bare `pass` that hid a failure to restrict the credential-directory permissions — a security-relevant silent failure (L-001). The `mkdir(parents=True, exist_ok=True)` on the line above is intentionally left to raise (directory creation failure should be fatal); only the best-effort permission hardening is now warned-and-continued rather than swallowed. Callers at `cli.py:139` and `cli.py:986` are unchanged.
+- **Scope:** single-function product-code change in `seal/cli.py` — no test-logic, workflow, or coverage change recorded for this task. Prior green-suite figure (1112 passed / 84.67%, 2026-08-24) is unaffected; the sandbox cannot re-run pytest, so no fresh pass status is asserted here.
