@@ -1,0 +1,72 @@
+warning: `VIRTUAL_ENV=/home/rez/projects/hermes-agent/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+==============================================================================
+P5.1: VPE Verification Benchmark
+Iterations per size: 100
+==============================================================================
+
+── 1KB envelopes (target ~1,000 bytes) ──
+
+  Actual envelope size: 1,008 bytes
+
+  vpe_verify (unmodified, 100 runs):
+    avg: 0.0679 ms
+    min: 0.0663 ms
+    max: 0.1016 ms
+    std: 0.0039 ms
+    envelope_size/avg_time: 14,840,393 bytes/sec
+  Phase breakdown (100 runs, avg):
+    parse                        0.0023 ms  (  3.4%)
+    structural_checks            0.0003 ms  (  0.4%)
+    canonical_json               0.0052 ms  (  7.6%)
+    signature_decode             0.0002 ms  (  0.3%)
+    ed25519_verify               0.0592 ms  ( 87.1%)
+    ttl_check                    0.0000 ms  (  0.1%)
+    instrumentation overhead     0.0008 ms  (  1.2%)
+
+  ✓ PASS: 0.07ms < 5.0ms target
+
+── 10KB envelopes (target ~10,000 bytes) ──
+
+  Actual envelope size: 10,008 bytes
+
+  vpe_verify (unmodified, 100 runs):
+    avg: 0.0895 ms
+    min: 0.0856 ms
+    max: 0.1174 ms
+    std: 0.0035 ms
+    envelope_size/avg_time: 111,875,492 bytes/sec
+  Phase breakdown (100 runs, avg):
+    parse                        0.0065 ms  (  7.2%)
+    structural_checks            0.0002 ms  (  0.2%)
+    canonical_json               0.0129 ms  ( 14.4%)
+    signature_decode             0.0001 ms  (  0.2%)
+    ed25519_verify               0.0575 ms  ( 64.3%)
+    ttl_check                    0.0000 ms  (  0.0%)
+    instrumentation overhead     0.0122 ms  ( 13.7%)
+
+  ✓ PASS: 0.09ms < 10.0ms target
+
+── 100KB envelopes (target ~100,000 bytes) ──
+
+  Actual envelope size: 100,008 bytes
+
+  vpe_verify (unmodified, 100 runs):
+    avg: 0.2471 ms
+    min: 0.2451 ms
+    max: 0.2575 ms
+    std: 0.0024 ms
+    envelope_size/avg_time: 404,742,687 bytes/sec
+  Phase breakdown (100 runs, avg):
+    parse                        0.0470 ms  ( 19.0%)
+    structural_checks            0.0002 ms  (  0.1%)
+    canonical_json               0.0898 ms  ( 36.3%)
+    signature_decode             0.0001 ms  (  0.1%)
+    ed25519_verify               0.1094 ms  ( 44.3%)
+    ttl_check                    0.0000 ms  (  0.0%)
+    instrumentation overhead     0.0005 ms  (  0.2%)
+
+  ✓ PASS: 0.25ms < 20.0ms target
+
+==============================================================================
+Benchmark complete.
+==============================================================================

@@ -1,0 +1,53 @@
+warning: `VIRTUAL_ENV=/home/rez/projects/hermes-agent/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+==============================================================================
+P5.3: Envelope Size Optimisation Benchmark
+Iterations per measurement: 500
+==============================================================================
+
+── 1. Size comparison: standard vs compact ──
+
+      Prompt |      Std |  Compact |  Std O/H |  Cpt O/H |  Saved
+  ──────────-+-────────-+-────────-+-────────-+-────────-+-──────
+      1 B    |   341 B |   217 B |   340 B |   216 B |   36%
+     10 B    |   350 B |   226 B |   340 B |   216 B |   35%
+     50 B    |   390 B |   266 B |   340 B |   216 B |   32%
+    200 B    |   540 B |   416 B |   340 B |   216 B |   23%
+   1000 B    |  1340 B |  1216 B |   340 B |   216 B |    9%
+
+  Target: <300B overhead → PASS (min overhead = 216 B)
+
+── 2. HMAC size comparison (bonus) ──
+
+      Prompt |      Std |  Compact |  Std O/H |  Cpt O/H
+  ──────────-+-────────-+-────────-+-────────-+-────────
+      1 B    |   259 B |   153 B |   258 B |   152 B
+     10 B    |   268 B |   162 B |   258 B |   152 B
+     50 B    |   308 B |   202 B |   258 B |   152 B
+    200 B    |   458 B |   352 B |   258 B |   152 B
+   1000 B    |  1258 B |  1152 B |   258 B |   152 B
+
+── 3. Parse time: standard vs compact ──
+
+  Prompt: 50 B
+  Standard envelope:   390 B  —  parse: 0.0017 ± 0.0005 ms
+  Compact envelope:    266 B  —  parse: 0.0011 ± 0.0001 ms
+  → Compact parse is 34.2% faster
+
+── 4. Verify time: standard vs compact ──
+
+  Standard verify:  0.0652 ± 0.0023 ms
+  Compact verify:   0.0538 ± 0.0058 ms
+  → Compact verify is 17.5% faster
+
+── 5. Stripping analysis for minimal envelope ──
+
+  Kept fields:    prompt, iat, nonce, signature
+  Stripped fields: vpe_version, scope, issuer, audience, doc_sha256, ttl_seconds, counter, cert_chain
+  Compact raw:    {"prompt":"A","iat":1788162569,"nonce":"25fb17513004d7fabac037b86691349c","signature":"3585be251f3bd63369f219af2d69c66ec820ef517d9af13f19bd08d0c39302e2187138563c63230b134ed223f309d4e83e3881abd7ba2d2dad47fabe5ef13808"}
+  Standard raw:   {"vpe_version":"1.0","prompt":"A","scope":{},"issuer":"","audience":"","doc_sha2...
+
+==============================================================================
+Benchmark complete.
+  Ed25519 compact overhead: 216 B (target <300 B: PASS)
+  Savings on 1-B prompt: 124 B (36%)
+==============================================================================
