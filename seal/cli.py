@@ -32,6 +32,7 @@ import sys
 import time
 from pathlib import Path
 
+from seal._fsutil import _ensure_seal_dir
 from seal.audit import AuditLog
 from seal.core import (
     SIG_ALG_ECDSA_P256,
@@ -65,14 +66,6 @@ DEFAULT_AUDIT_PATH = SEAL_DIR / "audit.jsonl"
 
 LABEL_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 GET_WARNING = "# WARNING: printing secret to terminal \u2014 may be in shell history"
-
-
-def _ensure_seal_dir() -> None:
-    SEAL_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        SEAL_DIR.chmod(0o700)
-    except OSError as exc:
-        log.warning("cannot set 0700 perms on seal dir %s: %s", SEAL_DIR, exc)
 
 
 def _valid_label(label: str) -> bool:
@@ -136,7 +129,7 @@ def cmd_genkey(args) -> int:
         print(f"  public key:  {pub_path}")
     else:
         # Sync active key to default flat-file paths so sign/verify work seamlessly.
-        _ensure_seal_dir()
+        _ensure_seal_dir(SEAL_DIR)
         priv_default = SEAL_DIR / "seal_private.key"
         pub_default = SEAL_DIR / "seal_public.key"
         priv_default.write_bytes(key["private_key"])
@@ -983,7 +976,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    _ensure_seal_dir()
+    _ensure_seal_dir(SEAL_DIR)
     parser = build_parser()
     args = parser.parse_args(argv)
 

@@ -16,6 +16,8 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
+from seal._fsutil import _ensure_seal_dir
+
 logger = logging.getLogger(__name__)
 
 try:  # PyYAML is a declared dependency; JSON is a graceful fallback.
@@ -45,22 +47,12 @@ class CredentialStoreCorruptedError(CredentialStoreError):
     """
 
 
-def _ensure_seal_dir(path: Path) -> None:
-    """Create the parent directory (and ~/.seal) with 0700 perms."""
-    parent = path.expanduser().resolve().parent
-    parent.mkdir(parents=True, exist_ok=True)
-    try:
-        parent.chmod(0o700)
-    except OSError as exc:  # pragma: no cover - non-POSIX or restricted FS
-        logger.warning("cannot set 0700 perms on seal dir %s: %s", parent, exc)
-
-
 def _load_or_create_keyfile(keyfile: Path) -> bytes:
     """Return the Fernet key from ``keyfile``, generating one if absent."""
     keyfile = keyfile.expanduser()
     if keyfile.exists():
         return keyfile.read_bytes().strip()
-    _ensure_seal_dir(keyfile)
+    _ensure_seal_dir(keyfile.expanduser().resolve().parent)
     key = Fernet.generate_key()
     # Write with 0600 from the start: create exclusively, then chmod.
     fd = os.open(str(keyfile), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -150,7 +142,7 @@ class CredentialStore:
 
     def _flush(self) -> None:
         """Encrypt the in-memory map and atomically write it with 0600 perms."""
-        _ensure_seal_dir(self.path)
+        _ensure_seal_dir(self.path.expanduser().resolve().parent)
         ciphertext = self._fernet.encrypt(self._serialize(self._data))
         tmp = self.path.with_name(self.path.name + ".tmp")
         fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

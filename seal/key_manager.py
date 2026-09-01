@@ -32,6 +32,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
+from seal._fsutil import _ensure_seal_dir
 from seal.core import generate_key_pair, vpe_verify
 
 # ---------------------------------------------------------------------------
@@ -109,15 +110,6 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _ensure_seal_dir() -> None:
-    """Create ``~/.seal`` with ``0700`` perms."""
-    SEAL_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        SEAL_DIR.chmod(0o700)
-    except OSError as exc:  # pragma: no cover - non-POSIX or restricted FS
-        log.warning("cannot set 0700 perms on seal dir %s: %s", SEAL_DIR, exc)
-
-
 def _load_or_create_master_key(path: Path | None = None) -> bytes:
     """Return the Fernet key from *path*, generating one if absent.
 
@@ -127,7 +119,7 @@ def _load_or_create_master_key(path: Path | None = None) -> bytes:
     keyfile = (path or DEFAULT_MASTER_KEY_PATH).expanduser()
     if keyfile.exists():
         return keyfile.read_bytes().strip()
-    _ensure_seal_dir()
+    _ensure_seal_dir(SEAL_DIR)
     key = Fernet.generate_key()
     # Write with 0600 from the start: create exclusively, then chmod.
     fd = os.open(str(keyfile), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -288,12 +280,7 @@ class KeyManager:
                             ``/etc/machine-id`` for an additional factor.
         """
         self.db_path = str(db_path) if db_path is not None else str(DEFAULT_DB_PATH)
-        parent = Path(self.db_path).parent
-        parent.mkdir(parents=True, exist_ok=True)
-        try:
-            parent.chmod(0o700)
-        except OSError as exc:  # pragma: no cover - non-POSIX or restricted FS
-            log.warning("cannot set 0700 perms on seal dir %s: %s", parent, exc)
+        _ensure_seal_dir(Path(self.db_path).parent)
 
         # Resolve the Fernet key.
         if master_key is None:
