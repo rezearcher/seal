@@ -10,6 +10,8 @@
 
 Seal replaces linguistic injection detection with **cryptographic provenance verification** for AI agent prompts. Every prompt gets an Ed25519-signed envelope that proves who authorized it, what scope it has, and that it hasn't been tampered with.
 
+> Built and maintained by **[Grey Ridge Signals Group](https://greyridgesignals.ai)** — an AI systems architecture & security firm. Seal is the open-source core of our [Prompt Injection Defense](https://greyridgesignals.ai/services/prompt-injection-defense/) practice; the design rationale is written up in [The Seal VPE protocol](https://greyridgesignals.ai/writing/seal-vpe-protocol/).
+
 - **VPE Core** — Sign/verify prompts with Ed25519 or HMAC-SHA256, **N-of-M multi-signature**, **hierarchical issuer cert chains**, and **hardware (HSM/TPM/Secure Enclave) signing**
 - **EPD Scanner** — Pre-LLM injection detection: regex + LLM fallback, plus **Unicode-smuggling defense** (invisible tag-block / variation-selector payloads) and an adversarial fuzzer
 - **Secrets Broker** — Keep credentials out of model context (`{SECRET:label}` proxy, Fernet-encrypted store, access audit)
@@ -215,7 +217,7 @@ Sign in TS      → Verify in Python / Go / Rust
 
 ```bash
 # Clone and install
-git clone https://github.com/nousresearch/seal.git
+git clone https://github.com/rezearcher/seal.git
 cd seal
 
 # Set up with uv
@@ -228,6 +230,14 @@ uv run pytest
 # Lint
 uv run ruff check .
 ```
+
+## Who builds Seal
+
+Seal is built by **[Grey Ridge Signals Group](https://greyridgesignals.ai)**, an AI systems architecture & security firm. We design how production AI systems and agents should work, then red-team the result.
+
+- **Need the problem Seal solves handled end-to-end?** → [Prompt Injection Defense](https://greyridgesignals.ai/services/prompt-injection-defense/)
+- **Reviewing an agentic / tool-using system?** → [Agentic System Security Review](https://greyridgesignals.ai/services/agentic-system-security-review/)
+- **The design rationale** → [The Seal VPE protocol](https://greyridgesignals.ai/writing/seal-vpe-protocol/)
 
 ## License
 
